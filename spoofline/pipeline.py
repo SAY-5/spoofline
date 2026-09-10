@@ -65,6 +65,14 @@ def _labels(corpus: LoadedCorpus, clip_ids) -> np.ndarray:
     return np.array([corpus.record(cid).label for cid in clip_ids], dtype=np.int64)
 
 
+def modality_labels(corpus: LoadedCorpus, clip_ids, stream: str) -> np.ndarray:
+    """1 where this stream's own modality was attacked."""
+    attribute = "video_attacked" if stream == "video" else "audio_attacked"
+    return np.array(
+        [int(getattr(corpus.record(cid), attribute)) for cid in clip_ids], dtype=np.int64
+    )
+
+
 def _families(corpus: LoadedCorpus, clip_ids) -> list[tuple[str, ...]]:
     return [corpus.record(cid).families for cid in clip_ids]
 
@@ -72,6 +80,7 @@ def _families(corpus: LoadedCorpus, clip_ids) -> list[tuple[str, ...]]:
 def _training_block(trained: TrainedStream) -> dict:
     return {
         "epochs": len(trained.history),
+        "best_epoch": trained.best_epoch,
         "history": trained.history,
         "final": trained.final,
         "train_clips": len(trained.train_ids),
@@ -83,10 +92,18 @@ def calibrate_all(
     raw: dict[str, dict[str, np.ndarray]],
     labels: dict[str, np.ndarray],
     target_precision: float,
+    modality_labels: dict[str, np.ndarray] | None = None,
 ) -> tuple[dict[str, StreamCalibration], dict[str, dict[str, np.ndarray]], FusionModel]:
     """Fit both stream calibrations and the fusion weight on the calibration split."""
+    modality = modality_labels or {}
     calibrations = {
-        stream: calibrate_stream(stream, raw[stream]["calib"], labels["calib"], target_precision)
+        stream: calibrate_stream(
+            stream,
+            raw[stream]["calib"],
+            modality.get(stream, labels["calib"]),
+            labels["calib"],
+            target_precision,
+        )
         for stream in ("video", "audio")
     }
     probabilities = {
@@ -189,7 +206,12 @@ def run_pipeline(
     }
     labels = {name: _labels(corpus, ids) for name, ids in splits.as_dict().items()}
 
-    calibrations, probabilities, fusion = calibrate_all(raw, labels, config.target_precision)
+    calib_modality = {
+        stream: modality_labels(corpus, splits.calib, stream) for stream in ("video", "audio")
+    }
+    calibrations, probabilities, fusion = calibrate_all(
+        raw, labels, config.target_precision, calib_modality
+    )
     say(
         f"  video threshold {calibrations['video'].operating.threshold:.4f}, "
         f"audio threshold {calibrations['audio'].operating.threshold:.4f}, "

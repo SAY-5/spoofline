@@ -83,7 +83,7 @@ def test_unreachable_target_is_reported_rather_than_faked():
 
 def test_calibrate_stream_bundles_map_and_threshold():
     scores, labels = _separable(n=300, seed=4)
-    calibration = calibrate_stream("video", scores, labels, 0.9)
+    calibration = calibrate_stream("video", scores, labels, labels, 0.9)
     assert calibration.stream == "video"
     assert calibration.operating.reached_target
     decisions = calibration.decide(scores)
@@ -98,3 +98,21 @@ def test_calibration_round_trips_through_a_dict():
     calibrator = PlattCalibrator.fit(scores, labels)
     restored = PlattCalibrator.from_dict(calibrator.as_dict())
     assert np.allclose(restored.predict(scores), calibrator.predict(scores))
+
+
+def test_calibrate_stream_fits_the_map_on_the_modality_label():
+    """The map answers "was this modality attacked", the threshold answers "is this clip an attack"."""
+    rng = np.random.default_rng(9)
+    n = 400
+    modality = rng.integers(0, 2, n)
+    other = rng.integers(0, 2, n)
+    clip = ((modality + other) > 0).astype(int)
+    scores = np.where(modality == 1, rng.normal(3.0, 1.0, n), rng.normal(-3.0, 1.0, n))
+
+    on_modality = calibrate_stream("video", scores, modality, clip, 0.9)
+    on_clip = calibrate_stream("video", scores, clip, clip, 0.9)
+
+    # Fitted on the modality label the probabilities span the range; fitted on the
+    # clip label they are dragged up towards the corpus wide attack prior.
+    assert on_modality.probabilities(scores).min() < 0.1
+    assert on_clip.probabilities(scores).min() > on_modality.probabilities(scores).min()

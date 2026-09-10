@@ -88,8 +88,8 @@ def render_summary(results: dict) -> str:
         training = results["training"][stream]
         final = training["final"]
         lines.append(
-            f"  {stream:<6} {training['epochs']} epochs  "
-            f"final train_loss {final['train_loss']:.4f} acc {final['train_acc']:.3f}  |  "
+            f"  {stream:<6} {training['epochs']} epochs, kept epoch {training['best_epoch']}  "
+            f"train_loss {final['train_loss']:.4f} acc {final['train_acc']:.3f}  |  "
             f"val_loss {final['val_loss']:.4f} acc {final['val_acc']:.3f}  "
             f"({training['train_clips']} train / {training['val_clips']} val clips)"
         )

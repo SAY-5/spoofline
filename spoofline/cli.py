@@ -19,6 +19,7 @@ from .models.cnn_lstm import load_checkpoint, save_checkpoint
 from .pipeline import (
     calibrate_all,
     evaluate_splits,
+    modality_labels,
     run_pipeline,
     score_single_clip,
 )
@@ -155,7 +156,10 @@ def calibrate(profile: str, seed: int | None, corpus_dir: str | None, run_dir: s
     config = _config(profile, seed, corpus_dir, run_dir)
     _, corpus, splits = _prepare(config)
     raw, labels = _score_everything(config, corpus, splits)
-    calibrations, _, fusion = calibrate_all(raw, labels, config.target_precision)
+    calib_modality = {
+        stream: modality_labels(corpus, splits.calib, stream) for stream in ("video", "audio")
+    }
+    calibrations, _, fusion = calibrate_all(raw, labels, config.target_precision, calib_modality)
     payload = {
         "video": calibrations["video"].as_dict(),
         "audio": calibrations["audio"].as_dict(),

@@ -30,10 +30,14 @@ class TrainedStream:
     history: list[dict[str, float]]
     train_ids: tuple[str, ...]
     val_ids: tuple[str, ...]
+    best_epoch: int = 0
 
     @property
     def final(self) -> dict[str, float]:
-        return self.history[-1] if self.history else {}
+        """The epoch whose weights were kept, which is the best validation loss."""
+        if not self.history:
+            return {}
+        return self.history[self.best_epoch - 1] if self.best_epoch else self.history[-1]
 
 
 def split_train_val(
@@ -145,6 +149,8 @@ def train_stream(
         )
 
     history: list[dict[str, float]] = []
+    best_epoch, best_val = 0, float("inf")
+    best_state: dict[str, torch.Tensor] | None = None
     for epoch in range(1, stream_config.epochs + 1):
         train_loss, train_acc = _epoch_loss(model, normalizer, train_loader, criterion, optimizer)
         if val_loader is not None:
@@ -161,6 +167,11 @@ def train_stream(
                 "val_acc": val_acc,
             }
         )
+        # Keep the weights from the best validation epoch rather than the last one.
+        score = val_loss if val_loader is not None and np.isfinite(val_loss) else train_loss
+        if score < best_val:
+            best_val, best_epoch = score, epoch
+            best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
         if progress:
             progress(
                 f"    epoch {epoch}/{stream_config.epochs} "
@@ -168,6 +179,10 @@ def train_stream(
                 f"val_loss {val_loss:.4f} acc {val_acc:.3f}"
             )
 
+    if best_state is not None:
+        model.load_state_dict(best_state)
+        if progress:
+            progress(f"    kept epoch {best_epoch} (best validation loss {best_val:.4f})")
     model.eval()
     return TrainedStream(
         stream=stream,
@@ -176,6 +191,7 @@ def train_stream(
         history=history,
         train_ids=tuple(train_ids),
         val_ids=tuple(val_ids),
+        best_epoch=best_epoch,
     )
 
 

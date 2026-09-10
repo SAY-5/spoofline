@@ -163,10 +163,21 @@ class StreamCalibration:
 
 
 def calibrate_stream(
-    stream: str, calib_scores, calib_labels, target_precision: float
+    stream: str,
+    calib_scores,
+    modality_labels,
+    clip_labels,
+    target_precision: float,
 ) -> StreamCalibration:
-    """Fit the calibration map and pick the operating threshold, both on the calibration split."""
-    calibrator = PlattCalibrator.fit(calib_scores, calib_labels)
+    """Fit the calibration map and pick the operating threshold on the calibration split.
+
+    The map is fitted against the stream's own modality label, so the probability
+    means "this modality was attacked" and does not silently absorb the corpus wide
+    attack prior. The threshold is then chosen against the clip label, because that
+    is the decision a deployed detector actually makes, and because it puts the
+    single stream operating points and the fused one on the same footing.
+    """
+    calibrator = PlattCalibrator.fit(calib_scores, modality_labels)
     probabilities = calibrator.predict(calib_scores)
-    operating = threshold_at_precision(probabilities, calib_labels, target_precision)
+    operating = threshold_at_precision(probabilities, clip_labels, target_precision)
     return StreamCalibration(stream=stream, calibrator=calibrator, operating=operating)

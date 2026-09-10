@@ -219,10 +219,10 @@ class DirectoryClipSource:
         if dtype is None:
             raise ValueError(f"unsupported wav sample width {width} bytes in {path}")
         data = np.frombuffer(raw, dtype=dtype).astype(np.float32)
-        if dtype is np.uint8:
-            data = (data - 128.0) / 128.0
-        else:
-            data = data / float(np.iinfo(dtype).max)
+        # 8 bit wav is unsigned and centred on 128, wider widths are signed.
+        offset = 128.0 if dtype is np.uint8 else 0.0
+        scale = 128.0 if dtype is np.uint8 else float(np.iinfo(dtype).max)
+        data = (data - offset) / scale
         if channels > 1:
             data = data.reshape(-1, channels).mean(axis=1)
         return data, rate

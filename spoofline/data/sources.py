@@ -8,6 +8,10 @@ the adapter for a real corpus: point it at a directory laid out as
       video/<clip_id>.mp4     any container OpenCV can decode
       audio/<clip_id>.wav     mono or stereo, any sample rate
 
+PCM wav is decoded with the standard library, so no extra codec package is
+needed. Any other audio extension falls back to ``torchaudio.load``, which on
+recent torchaudio releases needs a decoding backend installed separately.
+
 and it will decode, resample and reshape clips into exactly the tensors the two
 streams consume. Family names must come from `spoofline.families`, with
 ``bonafide`` for a stream that was not attacked.

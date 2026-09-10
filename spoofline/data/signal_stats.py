@@ -1,7 +1,8 @@
 """Cheap signal statistics used to characterise attack fingerprints.
 
-These are the measurements the attack direction tests assert on, and the same
-functions back the ``spoofline generate --report`` corpus summary.
+These are the measurements the attack direction tests in
+``tests/test_attack_directions.py`` assert on: each family has to move at least
+one of them in the direction it claims to.
 """
 
 from __future__ import annotations

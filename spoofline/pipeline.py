@@ -226,16 +226,29 @@ def run_pipeline(
     timer.mark("evaluate")
 
     unseen = metrics["unseen_test"]
-    best_single = max(unseen["video"]["precision"], unseen["audio"]["precision"])
-    if unseen["fused"]["precision"] > best_single + 1e-9:
-        verdict = "fusion holds a higher precision than either single stream on unseen families"
-    elif unseen["fused"]["precision"] >= best_single - 1e-9:
-        verdict = "fusion matches the best single stream precision on unseen families"
-    else:
-        verdict = (
-            "fusion does NOT hold precision against the best single stream on unseen families "
-            f"({unseen['fused']['precision']:.3f} vs {best_single:.3f})"
+    best_stream = max(("video", "audio"), key=lambda s: unseen[s]["precision"])
+    best_single = unseen[best_stream]["precision"]
+    fused_precision = unseen["fused"]["precision"]
+    if fused_precision > best_single + 1e-9:
+        headline_verdict = (
+            f"fused precision {fused_precision:.3f} is above the best single stream "
+            f"({best_stream} {best_single:.3f})"
         )
+    elif fused_precision >= best_single - 1e-9:
+        headline_verdict = (
+            f"fused precision {fused_precision:.3f} matches the best single stream "
+            f"({best_stream} {best_single:.3f})"
+        )
+    else:
+        headline_verdict = (
+            f"fused precision {fused_precision:.3f} is BELOW the best single stream "
+            f"({best_stream} {best_single:.3f})"
+        )
+    verdict = (
+        f"{headline_verdict}; fused F1 {unseen['fused']['f1']:.3f} and AUC "
+        f"{unseen['fused']['auc']:.3f} against {best_stream} F1 "
+        f"{unseen[best_stream]['f1']:.3f} and AUC {unseen[best_stream]['auc']:.3f}"
+    )
 
     results = {
         "profile": config.profile,

@@ -16,6 +16,12 @@ def _fmt(value: float, digits: int = 3) -> str:
     return f"{value:.{digits}f}"
 
 
+def _wrap_verdict(text: str) -> list[str]:
+    """Break the verdict at the semicolon so the block stays inside 78 columns."""
+    parts = [part.strip() for part in text.split(";")]
+    return [f"  verdict     {parts[0]}"] + [f"              {part}" for part in parts[1:]]
+
+
 def render_evaluation(results: dict) -> str:
     """The metrics, rule comparison and per family sections on their own."""
     lines = [
@@ -131,7 +137,7 @@ def render_summary(results: dict) -> str:
         f"  recall      fused {_fmt(headline['fused_recall'])}"
         f"   video {_fmt(headline['video_recall'])}"
         f"   audio {_fmt(headline['audio_recall'])}",
-        f"  verdict     {headline['verdict']}",
+        *_wrap_verdict(headline["verdict"]),
         "",
         "wall clock",
     ]

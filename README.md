@@ -202,6 +202,45 @@ wall clock
 ```
 
 
+### Scoring one clip
+
+```
+$ uv run spoofline score data/full/clips/clip_00003.npz    # bona fide in both streams
+video_probability   0.0037
+audio_probability   0.0033
+fused_probability   0.0033
+video_flags         False
+audio_flags         False
+decision            bonafide
+
+$ uv run spoofline score data/full/clips/clip_00004.npz    # audio_conversion, video untouched
+video_probability   0.0039
+audio_probability   0.9832
+fused_probability   0.9342
+video_flags         False
+audio_flags         True
+decision            attack
+
+$ uv run spoofline score data/full/clips/clip_00000.npz    # video_recompress, audio untouched
+video_probability   0.9828
+audio_probability   0.0058
+fused_probability   0.0547
+video_flags         True
+audio_flags         False
+decision            attack
+```
+
+The third case is the fusion rule doing its job: the video term alone carries the
+fused score of 0.0547 over the 0.0434 threshold while the audio stream, correctly,
+sees nothing wrong.
+
+### Reproducibility
+
+Two separate `make demo` processes on the same machine and seed produce a byte
+identical summary block, timings aside. `tests/test_determinism.py` asserts the
+same property on the 24 clip fixture corpus, where a full pipeline run takes about
+a second.
+
 ## Reading the numbers
 
 ### Does fusion hold its precision on unseen attack families?

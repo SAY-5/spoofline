@@ -20,7 +20,6 @@ from .data.dataset import (
     save_splits,
 )
 from .data.generate import combo_counts, family_counts, generate_corpus
-from .data.sources import NpzCorpusSource
 from .fusion import FusionModel, and_rule, fit_fusion, or_rule, rule_metrics
 from .metrics import evaluate, family_breakdown
 from .models.cnn_lstm import load_checkpoint, save_checkpoint
@@ -331,7 +330,3 @@ def score_single_clip(run_dir: Path, clip_path: Path, sample_rate: int | None = 
         if fused >= calibration["fused"]["operating"]["threshold"]
         else "bonafide",
     }
-
-
-def load_corpus_source(corpus_dir: Path) -> NpzCorpusSource:
-    return NpzCorpusSource(Path(corpus_dir))

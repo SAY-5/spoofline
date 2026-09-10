@@ -1,0 +1,183 @@
+{
+  "meta": {
+    "duration_s": 1.0,
+    "frame_size": 64,
+    "n_clips": 24,
+    "n_frames": 8,
+    "n_identities": 12,
+    "n_samples": 16000,
+    "name": "tiny",
+    "sample_rate": 16000,
+    "seed": 20250117
+  },
+  "records": [
+    {
+      "audio_family": "bonafide",
+      "clip_id": "clip_00000",
+      "identity": "id_000",
+      "label": 1,
+      "video_family": "video_recompress"
+    },
+    {
+      "audio_family": "bonafide",
+      "clip_id": "clip_00001",
+      "identity": "id_001",
+      "label": 0,
+      "video_family": "bonafide"
+    },
+    {
+      "audio_family": "audio_conversion",
+      "clip_id": "clip_00002",
+      "identity": "id_002",
+      "label": 1,
+      "video_family": "video_print"
+    },
+    {
+      "audio_family": "bonafide",
+      "clip_id": "clip_00003",
+      "identity": "id_003",
+      "label": 0,
+      "video_family": "bonafide"
+    },
+    {
+      "audio_family": "bonafide",
+      "clip_id": "clip_00004",
+      "identity": "id_004",
+      "label": 1,
+      "video_family": "video_splice"
+    },
+    {
+      "audio_family": "audio_vocoder",
+      "clip_id": "clip_00005",
+      "identity": "id_005",
+      "label": 1,
+      "video_family": "video_replay"
+    },
+    {
+      "audio_family": "audio_vocoder",
+      "clip_id": "clip_00006",
+      "identity": "id_006",
+      "label": 1,
+      "video_family": "video_print"
+    },
+    {
+      "audio_family": "audio_splice",
+      "clip_id": "clip_00007",
+      "identity": "id_007",
+      "label": 1,
+      "video_family": "bonafide"
+    },
+    {
+      "audio_family": "bonafide",
+      "clip_id": "clip_00008",
+      "identity": "id_008",
+      "label": 1,
+      "video_family": "video_print"
+    },
+    {
+      "audio_family": "bonafide",
+      "clip_id": "clip_00009",
+      "identity": "id_009",
+      "label": 0,
+      "video_family": "bonafide"
+    },
+    {
+      "audio_family": "bonafide",
+      "clip_id": "clip_00010",
+      "identity": "id_010",
+      "label": 0,
+      "video_family": "bonafide"
+    },
+    {
+      "audio_family": "audio_vocoder",
+      "clip_id": "clip_00011",
+      "identity": "id_011",
+      "label": 1,
+      "video_family": "bonafide"
+    },
+    {
+      "audio_family": "bonafide",
+      "clip_id": "clip_00012",
+      "identity": "id_000",
+      "label": 1,
+      "video_family": "video_print"
+    },
+    {
+      "audio_family": "bonafide",
+      "clip_id": "clip_00013",
+      "identity": "id_001",
+      "label": 1,
+      "video_family": "video_replay"
+    },
+    {
+      "audio_family": "audio_conversion",
+      "clip_id": "clip_00014",
+      "identity": "id_002",
+      "label": 1,
+      "video_family": "bonafide"
+    },
+    {
+      "audio_family": "audio_replay",
+      "clip_id": "clip_00015",
+      "identity": "id_003",
+      "label": 1,
+      "video_family": "video_replay"
+    },
+    {
+      "audio_family": "bonafide",
+      "clip_id": "clip_00016",
+      "identity": "id_004",
+      "label": 0,
+      "video_family": "bonafide"
+    },
+    {
+      "audio_family": "bonafide",
+      "clip_id": "clip_00017",
+      "identity": "id_005",
+      "label": 0,
+      "video_family": "bonafide"
+    },
+    {
+      "audio_family": "audio_conversion",
+      "clip_id": "clip_00018",
+      "identity": "id_006",
+      "label": 1,
+      "video_family": "bonafide"
+    },
+    {
+      "audio_family": "audio_splice",
+      "clip_id": "clip_00019",
+      "identity": "id_007",
+      "label": 1,
+      "video_family": "video_recompress"
+    },
+    {
+      "audio_family": "bonafide",
+      "clip_id": "clip_00020",
+      "identity": "id_008",
+      "label": 1,
+      "video_family": "video_replay"
+    },
+    {
+      "audio_family": "audio_replay",
+      "clip_id": "clip_00021",
+      "identity": "id_009",
+      "label": 1,
+      "video_family": "bonafide"
+    },
+    {
+      "audio_family": "audio_vocoder",
+      "clip_id": "clip_00022",
+      "identity": "id_010",
+      "label": 1,
+      "video_family": "bonafide"
+    },
+    {
+      "audio_family": "audio_conversion",
+      "clip_id": "clip_00023",
+      "identity": "id_011",
+      "label": 1,
+      "video_family": "video_splice"
+    }
+  ]
+}

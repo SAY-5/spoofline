@@ -48,6 +48,8 @@ class SpooflineConfig:
     threads: int = 8
     target_precision: float = 0.95
     unseen_families: tuple[str, ...] = ("video_splice", "audio_vocoder")
+    train_fraction: float = 0.6
+    calib_fraction: float = 0.2
     corpus: CorpusConfig = field(default_factory=CorpusConfig)
     video: StreamTrainConfig = field(default_factory=StreamTrainConfig)
     audio: StreamTrainConfig = field(default_factory=StreamTrainConfig)
@@ -63,7 +65,7 @@ FIXTURE_DIR = REPO_ROOT / "fixtures" / "tiny"
 TINY_CORPUS = CorpusConfig(
     name="tiny",
     n_clips=24,
-    n_identities=6,
+    n_identities=12,
     n_frames=8,
     frame_size=64,
     sample_rate=16000,
@@ -81,6 +83,8 @@ def profile(name: str) -> SpooflineConfig:
         return SpooflineConfig(
             profile="tiny",
             threads=4,
+            train_fraction=0.5,
+            calib_fraction=0.25,
             corpus=TINY_CORPUS,
             video=_TINY_TRAIN,
             audio=_TINY_TRAIN,

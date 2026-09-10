@@ -70,13 +70,17 @@ def fit_fusion(
 
 
 def and_rule(video: StreamCalibration, audio: StreamCalibration, p_video, p_audio) -> np.ndarray:
-    """Both streams must flag the clip."""
-    return video.decide(p_video) & audio.decide(p_audio)
+    """Both streams must flag the clip. Inputs are already calibrated probabilities."""
+    return _flags(video, p_video) & _flags(audio, p_audio)
 
 
 def or_rule(video: StreamCalibration, audio: StreamCalibration, p_video, p_audio) -> np.ndarray:
-    """Either stream flagging the clip is enough."""
-    return video.decide(p_video) | audio.decide(p_audio)
+    """Either stream flagging the clip is enough. Inputs are already calibrated probabilities."""
+    return _flags(video, p_video) | _flags(audio, p_audio)
+
+
+def _flags(calibration: StreamCalibration, probabilities) -> np.ndarray:
+    return np.asarray(probabilities, dtype=np.float64) >= calibration.operating.threshold
 
 
 def rule_metrics(decisions: np.ndarray, labels) -> dict[str, float]:

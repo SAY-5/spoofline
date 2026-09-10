@@ -51,8 +51,8 @@ class SpooflineConfig:
     train_fraction: float = 0.6
     calib_fraction: float = 0.2
     corpus: CorpusConfig = field(default_factory=CorpusConfig)
-    video: StreamTrainConfig = field(default_factory=StreamTrainConfig)
-    audio: StreamTrainConfig = field(default_factory=StreamTrainConfig)
+    video: StreamTrainConfig = field(default_factory=lambda: StreamTrainConfig(epochs=12))
+    audio: StreamTrainConfig = field(default_factory=lambda: StreamTrainConfig(epochs=8))
     corpus_dir: Path = REPO_ROOT / "data" / "full"
     run_dir: Path = REPO_ROOT / "runs" / "full"
 

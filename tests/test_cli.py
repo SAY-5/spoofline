@@ -13,7 +13,16 @@ from spoofline.config import FIXTURE_DIR
 def test_help_lists_every_command():
     result = CliRunner().invoke(main, ["--help"])
     assert result.exit_code == 0
-    for command in ("generate", "train", "calibrate", "eval", "score", "pipeline", "sweep"):
+    for command in (
+        "generate",
+        "train",
+        "calibrate",
+        "eval",
+        "score",
+        "pipeline",
+        "sweep",
+        "robustness",
+    ):
         assert command in result.output
 
 

@@ -159,7 +159,7 @@ function PrChart({ title, curve, target, point, onTarget }: PrChartProps) {
           <line className="operating-line" x1={tx} x2={tx} y1={frame.top} y2={frame.height - frame.bottom} />
           <circle className="operating-dot" cx={tx} cy={y(point.recall)} r={4.5} />
           <line className="target-line" x1={frame.left} x2={frame.width - frame.right} y1={y(target)} y2={y(target)} />
-          <text className="target-label" x={frame.left + 6} y={y(target) - 7}>
+          <text className="target-label" x={frame.width - frame.right - 32} y={y(target) + 17} textAnchor="end">
             target {fixed(target)}
           </text>
           <rect

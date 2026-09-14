@@ -74,6 +74,9 @@ export function logMel(audio: Int16Array, fbank: Float32Array): LogMel {
   const x = waveform(audio);
   const n = x.length;
   const pad = N_FFT >> 1;
+  if (n <= pad) {
+    throw new Error(`reflect padding needs more than ${pad} samples, got ${n}`);
+  }
   const frames = 1 + Math.floor(n / HOP_LENGTH);
   const window = hannPeriodic();
   fftCache ??= new Fft(N_FFT);

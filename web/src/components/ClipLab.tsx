@@ -109,6 +109,7 @@ export function ClipLab({ data, detector, modelError }: { data: DemoData; detect
   const [frame, setFrame] = useState(Math.floor(corpus.n_frames / 2));
   const [playhead, setPlayhead] = useState<number | null>(null);
   const playback = useRef<Playback | null>(null);
+  const scrubbed = useRef(false);
   const request = useRef(0);
 
   const entry = manifest.clips.find((c) => c.id === selected)!;
@@ -146,6 +147,7 @@ export function ClipLab({ data, detector, modelError }: { data: DemoData; detect
 
   useEffect(() => {
     stopAudio();
+    scrubbed.current = false;
     setResult(null);
     void run(selected);
   }, [selected, run, stopAudio]);
@@ -162,7 +164,7 @@ export function ClipLab({ data, detector, modelError }: { data: DemoData; detect
         const t = Math.max(0, Math.min(0.9999, elapsed / active.duration));
         setFrame(Math.floor(t * corpus.n_frames));
         setPlayhead(t);
-      } else if (!reducedMotion) {
+      } else if (!reducedMotion && !scrubbed.current) {
         const elapsed = (performance.now() - started) / 1000;
         const duration = corpus.n_samples / corpus.sample_rate;
         setFrame(Math.floor(((elapsed % duration) / duration) * corpus.n_frames));
@@ -179,6 +181,7 @@ export function ClipLab({ data, detector, modelError }: { data: DemoData; detect
       return;
     }
     if (!clip) return;
+    scrubbed.current = false;
     playback.current = playSamples(clip.data.audio, corpus.sample_rate, () => {
       playback.current = null;
       setPlayhead(null);
@@ -273,6 +276,7 @@ export function ClipLab({ data, detector, modelError }: { data: DemoData; detect
                 value={Math.min(frame, corpus.n_frames - 1)}
                 onChange={(e) => {
                   stopAudio();
+                  scrubbed.current = true;
                   setFrame(Number(e.target.value));
                 }}
                 disabled={playhead !== null}

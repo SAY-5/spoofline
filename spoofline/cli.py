@@ -9,16 +9,15 @@ from pathlib import Path
 import click
 import numpy as np
 
-from .calibrate import OperatingThreshold, PlattCalibrator, StreamCalibration
 from .config import PROFILE_NAMES, REPO_ROOT, SpooflineConfig
 from .config import profile as load_profile
 from .data.dataset import load_corpus, make_splits, save_splits
 from .data.generate import combo_counts, family_counts, generate_corpus
-from .fusion import FusionModel
 from .models.cnn_lstm import load_checkpoint, save_checkpoint
 from .pipeline import (
     calibrate_all,
     evaluate_splits,
+    load_calibration,
     modality_labels,
     run_pipeline,
     score_single_clip,
@@ -57,36 +56,6 @@ def _prepare(config: SpooflineConfig, force: bool = False):
         config.calib_fraction,
     )
     return source, corpus, splits
-
-
-def _load_calibration(run_dir: Path):
-    payload = json.loads((run_dir / "calibration.json").read_text())
-    calibrations = {
-        stream: StreamCalibration(
-            stream=stream,
-            calibrator=PlattCalibrator.from_dict(payload[stream]["calibrator"]),
-            operating=OperatingThreshold(
-                threshold=payload[stream]["operating"]["threshold"],
-                target_precision=payload[stream]["operating"]["target_precision"],
-                achieved_precision=payload[stream]["operating"]["achieved_precision"],
-                recall=payload[stream]["operating"]["recall"],
-                reached_target=payload[stream]["operating"]["reached_target"],
-            ),
-        )
-        for stream in ("video", "audio")
-    }
-    fused = payload["fused"]
-    fusion = FusionModel(
-        weight=fused["weight"],
-        operating=OperatingThreshold(
-            threshold=fused["operating"]["threshold"],
-            target_precision=fused["operating"]["target_precision"],
-            achieved_precision=fused["operating"]["achieved_precision"],
-            recall=fused["operating"]["recall"],
-            reached_target=fused["operating"]["reached_target"],
-        ),
-    )
-    return calibrations, fusion
 
 
 def _score_everything(config: SpooflineConfig, corpus, splits):
@@ -160,11 +129,13 @@ def calibrate(profile: str, seed: int | None, corpus_dir: str | None, run_dir: s
     calib_modality = {
         stream: modality_labels(corpus, splits.calib, stream) for stream in ("video", "audio")
     }
-    calibrations, _, fusion = calibrate_all(raw, labels, config.target_precision, calib_modality)
+    calibrations, _, fusions = calibrate_all(raw, labels, config.target_precision, calib_modality)
+    fusion, logistic = fusions["fused"], fusions["logistic"]
     payload = {
         "video": calibrations["video"].as_dict(),
         "audio": calibrations["audio"].as_dict(),
         "fused": fusion.as_dict(),
+        "logistic": logistic.as_dict(),
     }
     path = Path(config.run_dir) / "calibration.json"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -178,6 +149,11 @@ def calibrate(profile: str, seed: int | None, corpus_dir: str | None, run_dir: s
     click.echo(
         f"fused: weight {fusion.weight:.2f} threshold {fusion.operating.threshold:.4f} "
         f"precision {fusion.operating.achieved_precision:.3f} recall {fusion.operating.recall:.3f}"
+    )
+    click.echo(
+        f"logistic: threshold {logistic.operating.threshold:.4f} "
+        f"precision {logistic.operating.achieved_precision:.3f} "
+        f"recall {logistic.operating.recall:.3f}"
     )
     click.echo(f"wrote {path}")
 
@@ -194,7 +170,7 @@ def eval_command(
     config = _config(profile, seed, corpus_dir, run_dir)
     _, corpus, splits = _prepare(config)
     raw, labels = _score_everything(config, corpus, splits)
-    calibrations, fusion = _load_calibration(Path(config.run_dir))
+    calibrations, fusions = load_calibration(Path(config.run_dir))
     probabilities = {
         stream: {
             name: calibrations[stream].calibrator.predict(scores)
@@ -202,11 +178,10 @@ def eval_command(
         }
         for stream in ("video", "audio")
     }
-    metrics, rules, family_rates = evaluate_splits(
-        corpus, splits, probabilities, labels, calibrations, fusion
-    )
     click.echo(
-        render_evaluation({"metrics": metrics, "rules": rules, "family_rates": family_rates})
+        render_evaluation(
+            evaluate_splits(corpus, splits, probabilities, labels, calibrations, fusions)
+        )
     )
 
 
@@ -222,7 +197,7 @@ def score(clip: str, profile: str, run_dir: str | None) -> None:
     )
     for key, value in result.items():
         formatted = f"{value:.4f}" if isinstance(value, float) else value
-        click.echo(f"{key:<20}{formatted}")
+        click.echo(f"{key:<22}{formatted}")
 
 
 @main.command()

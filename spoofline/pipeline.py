@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .calibrate import StreamCalibration, calibrate_stream
+from .calibrate import OperatingThreshold, PlattCalibrator, StreamCalibration, calibrate_stream
 from .config import SpooflineConfig
 from .data.dataset import (
     LoadedCorpus,
@@ -20,7 +20,17 @@ from .data.dataset import (
     save_splits,
 )
 from .data.generate import combo_counts, family_counts, generate_corpus
-from .fusion import FusionModel, and_rule, fit_fusion, or_rule, rule_metrics
+from .fusion import (
+    ATTRIBUTIONS,
+    FusionModel,
+    LogisticFusion,
+    and_rule,
+    attribute,
+    fit_fusion,
+    fit_logistic_fusion,
+    or_rule,
+    rule_metrics,
+)
 from .metrics import evaluate, family_breakdown
 from .models.cnn_lstm import load_checkpoint, save_checkpoint
 from .report import render_summary
@@ -28,6 +38,9 @@ from .seeding import seed_everything
 from .train import TrainedStream, score_clips, train_stream
 
 Progress = Callable[[str], None] | None
+Fusions = dict[str, FusionModel | LogisticFusion]
+FUSION_DETECTORS = ("fused", "logistic")
+COMBOS = ("bonafide", "video_only", "audio_only", "both")
 
 
 @dataclass
@@ -92,8 +105,8 @@ def calibrate_all(
     labels: dict[str, np.ndarray],
     target_precision: float,
     modality_labels: dict[str, np.ndarray] | None = None,
-) -> tuple[dict[str, StreamCalibration], dict[str, dict[str, np.ndarray]], FusionModel]:
-    """Fit both stream calibrations and the fusion weight on the calibration split."""
+) -> tuple[dict[str, StreamCalibration], dict[str, dict[str, np.ndarray]], Fusions]:
+    """Fit both stream calibrations and both fusions on the calibration split."""
     modality = modality_labels or {}
     calibrations = {
         stream: calibrate_stream(
@@ -112,13 +125,12 @@ def calibrate_all(
         }
         for stream in ("video", "audio")
     }
-    fusion = fit_fusion(
-        probabilities["video"]["calib"],
-        probabilities["audio"]["calib"],
-        labels["calib"],
-        target_precision,
-    )
-    return calibrations, probabilities, fusion
+    calib = (probabilities["video"]["calib"], probabilities["audio"]["calib"], labels["calib"])
+    fusions: Fusions = {
+        "fused": fit_fusion(*calib, target_precision),
+        "logistic": fit_logistic_fusion(*calib, target_precision),
+    }
+    return calibrations, probabilities, fusions
 
 
 def evaluate_splits(
@@ -127,23 +139,39 @@ def evaluate_splits(
     probabilities: dict[str, dict[str, np.ndarray]],
     labels: dict[str, np.ndarray],
     calibrations: dict[str, StreamCalibration],
-    fusion: FusionModel,
+    fusions: Fusions,
     split_names: tuple[str, ...] = ("seen_test", "unseen_test"),
-) -> tuple[dict, dict, dict]:
-    """Clip level metrics, rule comparison and per family rates for the test splits."""
-    metrics: dict[str, dict[str, dict]] = {}
-    rules: dict[str, dict[str, dict]] = {}
-    family_rates: dict[str, dict[str, dict[str, float]]] = {}
+) -> dict[str, dict]:
+    """Clip level metrics, rules, per family rates and attribution for the test splits."""
+    blocks: dict[str, dict] = {"metrics": {}, "rules": {}, "family_rates": {}, "attribution": {}}
+    weighted = fusions["fused"]
     for split in split_names:
         ids = splits.as_dict()[split]
         y = labels[split]
         pv = probabilities["video"][split]
         pa = probabilities["audio"][split]
-        metrics[split], rules[split] = split_metrics(pv, pa, y, calibrations, fusion)
-        family_rates[split] = family_breakdown(
-            fusion.fuse(pv, pa), y, _families(corpus, ids), fusion.operating.threshold
+        blocks["metrics"][split], blocks["rules"][split] = split_metrics(
+            pv, pa, y, calibrations, fusions
         )
-    return metrics, rules, family_rates
+        blocks["family_rates"][split] = family_breakdown(
+            weighted.fuse(pv, pa), y, _families(corpus, ids), weighted.operating.threshold
+        )
+        combos = [corpus.record(cid).combo for cid in ids]
+        blocks["attribution"][split] = attribution_table(combos, pv, pa, fusions)
+    return blocks
+
+
+def attribution_table(
+    combos: list[str], p_video: np.ndarray, p_audio: np.ndarray, fusions: Fusions
+) -> dict[str, dict[str, dict[str, int]]]:
+    """Counts of which stream triggered each fusion decision, by attacked modality."""
+    table: dict[str, dict[str, dict[str, int]]] = {}
+    for name, model in fusions.items():
+        rows = {combo: dict.fromkeys(ATTRIBUTIONS, 0) for combo in COMBOS}
+        for combo, label in zip(combos, attribute(model.decide, p_video, p_audio), strict=True):
+            rows[combo][label] += 1
+        table[name] = rows
+    return table
 
 
 def split_metrics(
@@ -151,22 +179,43 @@ def split_metrics(
     p_audio: np.ndarray,
     labels: np.ndarray,
     calibrations: dict[str, StreamCalibration],
-    fusion: FusionModel,
+    fusions: Fusions,
 ) -> tuple[dict[str, dict], dict[str, dict]]:
     """Detector metrics and the decision rule comparison for one split."""
-    fused = fusion.fuse(p_video, p_audio)
     video, audio = calibrations["video"], calibrations["audio"]
     metrics = {
         "video": evaluate(p_video, labels, video.operating.threshold).as_dict(),
         "audio": evaluate(p_audio, labels, audio.operating.threshold).as_dict(),
-        "fused": evaluate(fused, labels, fusion.operating.threshold).as_dict(),
     }
+    for name, model in fusions.items():
+        scores = model.fuse(p_video, p_audio)
+        metrics[name] = evaluate(scores, labels, model.operating.threshold).as_dict()
     rules = {
         "and": rule_metrics(and_rule(video, audio, p_video, p_audio), labels),
         "or": rule_metrics(or_rule(video, audio, p_video, p_audio), labels),
-        "weighted": rule_metrics(fused >= fusion.operating.threshold, labels),
+        "weighted": rule_metrics(fusions["fused"].decide(p_video, p_audio), labels),
+        "logistic": rule_metrics(fusions["logistic"].decide(p_video, p_audio), labels),
     }
     return metrics, rules
+
+
+def precision_verdict(unseen: dict[str, dict], detector: str) -> str:
+    """Compare a fusion detector's unseen precision with the best single stream."""
+    best_stream = max(("video", "audio"), key=lambda s: unseen[s]["precision"])
+    best_single = unseen[best_stream]["precision"]
+    precision = unseen[detector]["precision"]
+    if precision > best_single + 1e-9:
+        relation = "is above"
+    elif precision >= best_single - 1e-9:
+        relation = "matches"
+    else:
+        relation = "is BELOW"
+    return (
+        f"{detector} precision {precision:.3f} {relation} the best single stream "
+        f"({best_stream} {best_single:.3f}); {detector} F1 {unseen[detector]['f1']:.3f} and "
+        f"AUC {unseen[detector]['auc']:.3f} against {best_stream} F1 "
+        f"{unseen[best_stream]['f1']:.3f} and AUC {unseen[best_stream]['auc']:.3f}"
+    )
 
 
 def run_pipeline(
@@ -221,46 +270,24 @@ def run_pipeline(
     calib_modality = {
         stream: modality_labels(corpus, splits.calib, stream) for stream in ("video", "audio")
     }
-    calibrations, probabilities, fusion = calibrate_all(
+    calibrations, probabilities, fusions = calibrate_all(
         raw, labels, config.target_precision, calib_modality
     )
+    fusion = fusions["fused"]
     say(
         f"  video threshold {calibrations['video'].operating.threshold:.4f}, "
         f"audio threshold {calibrations['audio'].operating.threshold:.4f}, "
-        f"fusion weight {fusion.weight:.2f} threshold {fusion.operating.threshold:.4f}"
+        f"fusion weight {fusion.weight:.2f} threshold {fusion.operating.threshold:.4f}, "
+        f"logistic threshold {fusions['logistic'].operating.threshold:.4f}"
     )
     timer.mark("calibrate")
 
     say("[6/6] evaluating on the seen and unseen test splits")
-    metrics, rules, family_rates = evaluate_splits(
-        corpus, splits, probabilities, labels, calibrations, fusion
-    )
+    evaluation = evaluate_splits(corpus, splits, probabilities, labels, calibrations, fusions)
     timer.mark("evaluate")
 
-    unseen = metrics["unseen_test"]
-    best_stream = max(("video", "audio"), key=lambda s: unseen[s]["precision"])
-    best_single = unseen[best_stream]["precision"]
-    fused_precision = unseen["fused"]["precision"]
-    if fused_precision > best_single + 1e-9:
-        headline_verdict = (
-            f"fused precision {fused_precision:.3f} is above the best single stream "
-            f"({best_stream} {best_single:.3f})"
-        )
-    elif fused_precision >= best_single - 1e-9:
-        headline_verdict = (
-            f"fused precision {fused_precision:.3f} matches the best single stream "
-            f"({best_stream} {best_single:.3f})"
-        )
-    else:
-        headline_verdict = (
-            f"fused precision {fused_precision:.3f} is BELOW the best single stream "
-            f"({best_stream} {best_single:.3f})"
-        )
-    verdict = (
-        f"{headline_verdict}; fused F1 {unseen['fused']['f1']:.3f} and AUC "
-        f"{unseen['fused']['auc']:.3f} against {best_stream} F1 "
-        f"{unseen[best_stream]['f1']:.3f} and AUC {unseen[best_stream]['auc']:.3f}"
-    )
+    unseen = evaluation["metrics"]["unseen_test"]
+    best_single = max(unseen["video"]["precision"], unseen["audio"]["precision"])
 
     results = {
         "profile": config.profile,
@@ -279,18 +306,21 @@ def run_pipeline(
             "video": calibrations["video"].as_dict(),
             "audio": calibrations["audio"].as_dict(),
             "fused": fusion.as_dict(),
+            "logistic": fusions["logistic"].as_dict(),
         },
-        "metrics": metrics,
-        "rules": rules,
-        "family_rates": family_rates,
+        **evaluation,
         "headline": {
-            "fused_precision": unseen["fused"]["precision"],
-            "video_precision": unseen["video"]["precision"],
-            "audio_precision": unseen["audio"]["precision"],
-            "fused_recall": unseen["fused"]["recall"],
-            "video_recall": unseen["video"]["recall"],
-            "audio_recall": unseen["audio"]["recall"],
-            "verdict": verdict,
+            **{
+                f"{detector}_{metric}": unseen[detector][metric]
+                for detector in ("fused", "logistic", "video", "audio")
+                for metric in ("precision", "recall")
+            },
+            **{
+                f"{detector}_precision_gap": unseen[detector]["precision"] - best_single
+                for detector in FUSION_DETECTORS
+            },
+            "verdict": precision_verdict(unseen, "fused"),
+            "logistic_verdict": precision_verdict(unseen, "logistic"),
         },
         "timings": {**timer.timings, "total": time.perf_counter() - started},
     }
@@ -303,13 +333,34 @@ def run_pipeline(
     return PipelineResult(results=results, summary=summary, run_dir=run_dir)
 
 
+def load_calibration(run_dir: Path) -> tuple[dict[str, StreamCalibration], Fusions]:
+    """Stream calibrations and both fusions from a finished run's calibration.json."""
+    payload = json.loads((Path(run_dir) / "calibration.json").read_text())
+    calibrations = {
+        stream: StreamCalibration(
+            stream=stream,
+            calibrator=PlattCalibrator.from_dict(payload[stream]["calibrator"]),
+            operating=OperatingThreshold(**payload[stream]["operating"]),
+        )
+        for stream in ("video", "audio")
+    }
+    fusions: Fusions = {
+        "fused": FusionModel(
+            weight=float(payload["fused"]["weight"]),
+            operating=OperatingThreshold(**payload["fused"]["operating"]),
+        ),
+        "logistic": LogisticFusion.from_dict(payload["logistic"]),
+    }
+    return calibrations, fusions
+
+
 def score_single_clip(run_dir: Path, clip_path: Path, sample_rate: int | None = None) -> dict:
     """Score one npz clip with the checkpoints and calibration from a finished run."""
     import torch
 
     from .data.features import log_mel, mel_patches, video_steps
 
-    calibration = json.loads((Path(run_dir) / "calibration.json").read_text())
+    calibrations, fusions = load_calibration(Path(run_dir))
     video_model, video_norm, _ = load_checkpoint(Path(run_dir) / "video.pt")
     audio_model, audio_norm, _ = load_checkpoint(Path(run_dir) / "audio.pt")
     rate = sample_rate or 16000
@@ -324,22 +375,20 @@ def score_single_clip(run_dir: Path, clip_path: Path, sample_rate: int | None = 
         a_steps = torch.from_numpy(mel_patches(log_mel(audio, rate)))[None]
         a_logit = float(audio_model(audio_norm.apply(a_steps), torch.tensor([a_steps.shape[1]]))[0])
 
-    from .calibrate import PlattCalibrator
-
-    pv = float(PlattCalibrator.from_dict(calibration["video"]["calibrator"]).predict([v_logit])[0])
-    pa = float(PlattCalibrator.from_dict(calibration["audio"]["calibrator"]).predict([a_logit])[0])
-    weight = float(calibration["fused"]["weight"])
-    fused = weight * pv + (1.0 - weight) * pa
+    pv = float(calibrations["video"].probabilities([v_logit])[0])
+    pa = float(calibrations["audio"].probabilities([a_logit])[0])
+    weighted, logistic = fusions["fused"], fusions["logistic"]
     return {
         "clip": str(clip_path),
         "video_logit": v_logit,
         "audio_logit": a_logit,
         "video_probability": pv,
         "audio_probability": pa,
-        "fused_probability": fused,
-        "video_flags": pv >= calibration["video"]["operating"]["threshold"],
-        "audio_flags": pa >= calibration["audio"]["operating"]["threshold"],
-        "decision": "attack"
-        if fused >= calibration["fused"]["operating"]["threshold"]
-        else "bonafide",
+        "fused_probability": float(weighted.fuse(pv, pa)),
+        "logistic_probability": float(logistic.fuse(pv, pa)[0]),
+        "video_flags": bool(calibrations["video"].decide([v_logit])[0]),
+        "audio_flags": bool(calibrations["audio"].decide([a_logit])[0]),
+        "decision": "attack" if bool(weighted.decide(pv, pa)) else "bonafide",
+        "logistic_decision": "attack" if bool(logistic.decide(pv, pa)[0]) else "bonafide",
+        "triggered_by": attribute(weighted.decide, [pv], [pa])[0],
     }

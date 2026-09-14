@@ -3,6 +3,34 @@
 All notable changes to spoofline. Versions follow semantic versioning and each
 one is an annotated git tag with a matching GitHub release.
 
+## 4.0.0
+
+Robustness to benign degradation.
+
+* `spoofline robustness` degrades every bona fide test clip of a finished run with
+  eight perturbations at three to five severities each: JPEG quality ladder, video
+  gaussian noise, brightness and contrast drift, frame dropout, audio gaussian
+  noise, resampling round trip, mild reverb and short audio dropouts. It reports
+  the false alarm rate per perturbation and severity for the video and audio
+  streams and both fusions.
+* Abstain option: a fusion abstains when `|p_video - p_audio|` exceeds a margin,
+  and the report gives coverage, precision and recall on the kept clips, plus the
+  attacks and bona fide clips abstained on, for a ladder of margins on the seen
+  and unseen test splits.
+* `spoofline.scoring.RunScorer` loads a finished run's checkpoints, calibration and
+  fusions once and scores decoded clips in batches.
+* Measured on the demo run's 86 bona fide test clips: clean false alarm rate 0.116
+  for the weighted sum; 40 dB SNR audio noise raises it to 0.849, a 12 kHz resample
+  to 1.000, RT60 0.1 s reverb to 0.709, JPEG quality 30 to 0.174 and brightness and
+  contrast drift 0.35 to 0.244. Video noise and frame dropout have no effect.
+* Abstaining at margin 0.9 reaches unseen precision 1.000 at coverage 0.821 but
+  abstains on 19 of 80 attacks, and lowers seen precision to 0.881 at coverage
+  0.487.
+* 35 new tests: every one of the 30 perturbation severities changes its own stream,
+  leaves the other stream and the label untouched, heavier severities change the
+  signal more, perturbations are deterministic and refuse attacked clips, the
+  abstain coverage arithmetic, and a robustness report on a tiny run.
+
 ## 3.0.0
 
 Fusion that earns its place, measured.

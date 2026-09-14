@@ -90,6 +90,7 @@ test clips from a `make demo` run, and `npm run selfcheck` holds every logit to 
 | [v2.0.0](https://github.com/SAY-5/spoofline/releases/tag/v2.0.0) | evaluation you can trust: `spoofline sweep` over 3 seeds and all 16 leave-two-families-out splits, mean, std and bootstrap 95% intervals per detector |
 | [v3.0.0](https://github.com/SAY-5/spoofline/releases/tag/v3.0.0) | fusion that earns its place: logistic fusion over both streams plus their disagreement, compared with weighted sum, AND and OR, and per clip attribution of the triggering stream |
 | [v4.0.0](https://github.com/SAY-5/spoofline/releases/tag/v4.0.0) | robustness to benign degradation: false alarm rate per perturbation and severity for every detector, and an abstain option with coverage against precision |
+| [v5.0.0](https://github.com/SAY-5/spoofline/releases/tag/v5.0.0) | deployment path: `spoofline export --onnx` with a 1e-4 parity check, a model card from the last run, batch `spoofline score --json`, and per clip p50 and p95 CPU latency |
 
 `CHANGELOG.md` has the detail for every version.
 
@@ -100,16 +101,16 @@ Output of one `make demo` on a 10 core Apple silicon CPU, pasted verbatim:
 ```
 $ make demo
 [1/6] generating corpus 'full' into data/full
-  generated 160/1600 clips (4.8s)
-  generated 320/1600 clips (9.4s)
-  generated 480/1600 clips (14.1s)
-  generated 640/1600 clips (18.7s)
-  generated 800/1600 clips (23.3s)
-  generated 960/1600 clips (28.6s)
-  generated 1120/1600 clips (34.3s)
-  generated 1280/1600 clips (40.7s)
-  generated 1440/1600 clips (45.7s)
-  generated 1600/1600 clips (50.5s)
+  generated 160/1600 clips (8.5s)
+  generated 320/1600 clips (20.5s)
+  generated 480/1600 clips (31.6s)
+  generated 640/1600 clips (39.4s)
+  generated 800/1600 clips (46.4s)
+  generated 960/1600 clips (56.0s)
+  generated 1120/1600 clips (64.1s)
+  generated 1280/1600 clips (71.0s)
+  generated 1440/1600 clips (78.0s)
+  generated 1600/1600 clips (84.4s)
   wrote manifest for 1600 clips to data/full/manifest.json
 [2/6] loading 1600 clips into memory
   loaded 320/1600 clips
@@ -143,7 +144,7 @@ $ make demo
     epoch 8/8 train_loss 0.0259 acc 0.995 | val_loss 0.0741 acc 0.975
     kept epoch 7 (best validation loss 0.0727)
 [5/6] scoring every split and calibrating
-  video threshold 0.0179, audio threshold 0.6029, fusion weight 0.05 threshold 0.0434
+  video threshold 0.0179, audio threshold 0.6029, fusion weight 0.05 threshold 0.0434, logistic threshold 0.0869
 [6/6] evaluating on the seen and unseen test splits
 
 ==============================================================================
@@ -165,24 +166,30 @@ calibration on the calib split, target precision 0.95
   video  platt a=+0.774 b=-0.228   threshold 0.0179   calib precision 0.953   recall 0.631   target met true
   audio  platt a=+0.783 b=-1.763   threshold 0.6029   calib precision 0.957   recall 0.562   target met true
   fused  weight 0.05 on video           threshold 0.0434   calib precision 0.952   recall 1.000   target met true
+  logistic p_video +3.252  p_audio +2.474  disagreement +3.016  intercept -2.650
+           threshold 0.0869   calib precision 0.952   recall 1.000   target met true
 
 clip level metrics at the calibrated operating points
   split       detector        P      R     F1    EER    AUC     n  attacks
   seen_test   video       0.990  0.643  0.780  0.256  0.848   197      154
   seen_test   audio       0.969  0.604  0.744  0.292  0.785   197      154
   seen_test   fused       0.956  0.994  0.975  0.140  0.947   197      154
+  seen_test   logistic    0.963  1.000  0.981  0.023  0.998   197      154
   unseen_test video       1.000  0.475  0.644  0.387  0.705   123       80
   unseen_test audio       0.864  0.237  0.373  0.279  0.806   123       80
   unseen_test fused       0.941  0.600  0.733  0.188  0.869   123       80
+  unseen_test logistic    0.948  0.688  0.797  0.125  0.883   123       80
 
 decision rule comparison at the same thresholds
   split       rule            P      R     F1
   seen_test   and         1.000  0.260  0.412
   seen_test   or          0.974  0.987  0.981
   seen_test   weighted    0.956  0.994  0.975
+  seen_test   logistic    0.963  1.000  0.981
   unseen_test and         1.000  0.113  0.202
   unseen_test or          0.941  0.600  0.733
   unseen_test weighted    0.941  0.600  0.733
+  unseen_test logistic    0.948  0.688  0.797
 
 per family detection rate, fused detector at its calibrated threshold
   split       family                   n  detected    rate
@@ -203,20 +210,42 @@ per family detection rate, fused detector at its calibrated threshold
   unseen_test video_replay             1         1   1.000
   unseen_test video_splice            44        23   0.523
 
+which stream triggered each fusion decision, silencing one stream at a time
+  split       detector  clips          none  video  audio either  joint
+  seen_test   fused     bonafide         36      0      6      0      1
+  seen_test   fused     video_only        1     51      0      3      1
+  seen_test   fused     audio_only        0      0     56      0      0
+  seen_test   fused     both              0      1      1     40      0
+  seen_test   logistic  bonafide         37      0      6      0      0
+  seen_test   logistic  video_only        0     53      0      3      0
+  seen_test   logistic  audio_only        0      0     56      0      0
+  seen_test   logistic  both              0      1      0     41      0
+  unseen_test fused     bonafide         40      0      3      0      0
+  unseen_test fused     video_only       18      2      2      0      0
+  unseen_test fused     audio_only       11      0     12      0      0
+  unseen_test fused     both              3      7     13     11      1
+  unseen_test logistic  bonafide         40      0      3      0      0
+  unseen_test logistic  video_only       12      8      2      0      0
+  unseen_test logistic  audio_only       11      0     12      0      0
+  unseen_test logistic  both              2      9      8     16      0
+
 headline, unseen attack families
-  precision   fused 0.941   video 1.000   audio 0.864
-  recall      fused 0.600   video 0.475   audio 0.237
+  precision   fused 0.941   logistic 0.948   video 1.000   audio 0.864
+  recall      fused 0.600   logistic 0.688   video 0.475   audio 0.237
+  gap         precision minus best single stream: fused -0.059   logistic -0.052
   verdict     fused precision 0.941 is BELOW the best single stream (video 1.000)
               fused F1 0.733 and AUC 0.869 against video F1 0.644 and AUC 0.705
+  logistic    logistic precision 0.948 is BELOW the best single stream (video 1.000)
+              logistic F1 0.797 and AUC 0.883 against video F1 0.644 and AUC 0.705
 
 wall clock
-  generate            50.7s
-  load                 3.3s
-  train_video        231.3s
-  train_audio         75.3s
-  calibrate           57.6s
+  generate            84.5s
+  load                 4.5s
+  train_video        331.0s
+  train_audio        107.6s
+  calibrate           49.8s
   evaluate             0.0s
-  total              418.2s
+  total              577.4s
 ==============================================================================
 ```
 
@@ -225,33 +254,49 @@ wall clock
 
 ```
 $ uv run spoofline score data/full/clips/clip_00003.npz    # bona fide in both streams
-video_probability   0.0037
-audio_probability   0.0033
-fused_probability   0.0033
-video_flags         False
-audio_flags         False
-decision            bonafide
+clip                  data/full/clips/clip_00003.npz
+video_logit           -6.9419
+audio_logit           -5.0318
+video_probability     0.0037
+audio_probability     0.0033
+fused_probability     0.0033
+logistic_probability  0.0673
+video_flags           False
+audio_flags           False
+decision              bonafide
+logistic_decision     bonafide
+triggered_by          none
 
 $ uv run spoofline score data/full/clips/clip_00004.npz    # audio_conversion, video untouched
-video_probability   0.0039
-audio_probability   0.9832
-fused_probability   0.9342
-video_flags         False
-audio_flags         True
-decision            attack
+clip                  data/full/clips/clip_00004.npz
+video_logit           -6.8527
+audio_logit           7.4499
+video_probability     0.0039
+audio_probability     0.9832
+fused_probability     0.9342
+logistic_probability  0.9399
+video_flags           False
+audio_flags           True
+decision              attack
+logistic_decision     attack
+triggered_by          audio
 
 $ uv run spoofline score data/full/clips/clip_00000.npz    # video_recompress, audio untouched
-video_probability   0.9828
-audio_probability   0.0058
-fused_probability   0.0547
-video_flags         True
-audio_flags         False
-decision            attack
+clip                  data/full/clips/clip_00000.npz
+video_logit           5.5226
+audio_logit           -4.3175
+video_probability     0.9828
+audio_probability     0.0058
+fused_probability     0.0547
+logistic_probability  0.9709
+video_flags           True
+audio_flags           False
+decision              attack
+logistic_decision     attack
+triggered_by          video
 ```
 
-The third case is the fusion rule doing its job: the video term alone carries the
-fused score of 0.0547 over the 0.0434 threshold while the audio stream, correctly,
-sees nothing wrong.
+The third case is the weighted fusion doing its job: the video term alone carries the fused score of 0.0547 over the 0.0434 threshold while the audio stream, correctly, sees nothing wrong, and `triggered_by` names video as the stream that did it.
 
 ### Reproducibility
 
@@ -679,6 +724,98 @@ abstention helps depends on whether the false alarms or the true detections are 
 ones with disagreeing streams, and that differs between the two splits of the same
 run.
 
+## Deployment path
+
+v5 turns a finished run into something a service can load: both streams as ONNX,
+a model card, batch scoring with a stable JSON schema, and measured CPU latency.
+Every number in this section comes from the demo run above.
+
+```bash
+uv run spoofline export --onnx          # runs/full/onnx/video.onnx, audio.onnx, export.json
+uv run spoofline model-card             # runs/full/MODEL_CARD.md
+uv run spoofline score data/full/clips/clip_00000.npz data/full/clips/clip_00003.npz --json
+uv run spoofline bench                  # runs/full/latency.json
+```
+
+### ONNX export and parity
+
+Each stream is exported with its normaliser folded into the graph and a dynamic
+batch and step axis. Deployed clips all have the same number of steps, so the
+exported graph runs the LSTM on the dense tensor instead of a packed sequence;
+with no padding the two are the same computation. Export fails unless every
+clip's ONNX Runtime logit is within 1e-4 of the PyTorch logit.
+
+```
+$ uv run spoofline export --onnx --parity-clips 32
+video: runs/full/onnx/video.onnx  max |onnx - torch| 3.81e-06 over 32 clips
+audio: runs/full/onnx/audio.onnx  max |onnx - torch| 3.81e-06 over 32 clips
+wrote runs/full/onnx/export.json
+```
+
+### Model card
+
+`spoofline model-card` renders the data note, splits, every threshold with its
+score formula, seen and unseen metrics for all four detectors, the robustness
+table at the heaviest severity of each perturbation, and the limitations, all read
+from `results.json` and `robustness.json` of the run. The card of the demo run is
+committed as [`docs/MODEL_CARD.md`](docs/MODEL_CARD.md).
+
+### Batch scoring as JSON
+
+`spoofline score` takes any number of clips and scores them in batches. With
+`--json` it emits one document, `schema_version` 1:
+
+```json
+{
+  "schema_version": 1,
+  "run_dir": "runs/full",
+  "clips": [
+    {
+      "clip": "data/full/clips/clip_00004.npz",
+      "video_logit": -6.852695465087891,
+      "audio_logit": 7.449930667877197,
+      "video_probability": 0.003949245872857415,
+      "audio_probability": 0.9832120510611272,
+      "fused_probability": 0.9342489108017137,
+      "logistic_probability": 0.9398798501923926,
+      "video_flags": false,
+      "audio_flags": true,
+      "decision": "attack",
+      "logistic_decision": "attack",
+      "triggered_by": "audio"
+    }
+  ]
+}
+```
+
+### CPU latency
+
+Per clip wall time on one thread, after 5 warm up calls. A stream row is feature
+extraction plus one forward pass; end to end adds reading the npz, calibration,
+both fusions and attribution.
+
+```
+==============================================================================
+spoofline bench   clips=200   threads=1   CPU
+==============================================================================
+per clip wall time; a stream includes its feature extraction, end to end adds
+npz decode, calibration, both fusions and attribution
+  engine  stage          p50 ms   p95 ms  mean ms     n
+  torch   video           10.07    15.03    11.91   200
+  torch   audio            2.54     7.20     3.96   200
+  torch   end_to_end      17.04    42.82    20.45   200
+  onnx    video            4.50     6.35     4.81   200
+  onnx    audio            2.05     3.16     2.20   200
+  onnx    end_to_end       8.44    17.35    10.44   200
+==============================================================================
+```
+
+The machine was running another CPU heavy job throughout, at a load average near
+17 on 10 cores, so the p95 figures in particular are inflated; treat these as
+numbers from a busy laptop, not a quiet benchmark host. ONNX Runtime is about
+twice as fast as PyTorch here on both streams, and the end to end row adds the
+npz decode and the feature extraction that both engines share.
+
 ## Plugging in a real corpus
 
 `spoofline/data/sources.py` defines the `ClipSource` protocol:
@@ -752,11 +889,14 @@ spoofline/
   calibrate.py       Platt scaling and threshold selection at a target precision
   fusion.py          weighted and logistic fusion, AND and OR rules, per clip attribution
   train.py           per-stream training and scoring
-  pipeline.py        the end to end run and the single clip scorer
+  pipeline.py        the end to end run, calibration loading and evaluation
   sweep.py           repeated seed, leave two families out sweep with bootstrap summaries
   scoring.py         run scorer: checkpoints, calibration and fusions loaded once
   perturb.py         benign degradations of bona fide clips
   robustness.py      false alarms under degradation and the abstain rule
+  export.py          ONNX export of both streams with a parity check
+  model_card.py      model card rendered from a finished run
+  bench.py           per clip CPU latency on PyTorch and ONNX Runtime
   report.py          the summary block
   cli.py             click commands
   data/

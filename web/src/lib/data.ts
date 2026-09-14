@@ -13,6 +13,11 @@ export async function loadJson<T>(path: string): Promise<T> {
   return (await fetchOk(path)).json() as Promise<T>;
 }
 
+async function inflate(response: Response): Promise<ArrayBuffer> {
+  const body = response.body ?? new Blob([await response.arrayBuffer()]).stream();
+  return new Response(body.pipeThrough(new DecompressionStream("deflate"))).arrayBuffer();
+}
+
 export interface DemoData {
   manifest: Manifest;
   reference: Reference;
@@ -37,7 +42,10 @@ const clipCache = new Map<string, Promise<ClipData>>();
 export function loadClip(manifest: Manifest, id: string): Promise<ClipData> {
   let pending = clipCache.get(id);
   if (!pending) {
-    pending = fetchOk(`clips/${id}.bin`).then(async (r) => decodeClip(await r.arrayBuffer(), manifest.corpus));
+    pending = fetchOk(`clips/${id}.zlib`)
+      .then(inflate)
+      .then((buffer) => decodeClip(buffer, manifest.corpus));
+    pending.catch(() => clipCache.delete(id));
     clipCache.set(id, pending);
   }
   return pending;

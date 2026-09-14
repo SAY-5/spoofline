@@ -11,10 +11,11 @@ last commit touching spoofline/, pyproject.toml, uv.lock or the Makefile is used
 Everything lands in web/public/data:
 
     models/video.onnx, models/audio.onnx   both streams, normaliser folded into the graph
-    clips/<clip_id>.bin                     uint8 frames (T, H, W, 3) then int16 little endian audio
+    clips/<clip_id>.zlib                    lossless clip: deflate of uint8 frame residuals (left
+                                            then temporal difference) and int16 audio differences
     mel_fbank.bin                           float32 mel filterbank, shape (n_fft // 2 + 1, n_mels)
-    logmel_check.bin                        float32 log mel of the first exported clip, (n_mels, frames)
-    manifest.json                           shapes, feature settings, calibration, fusion, clip index
+    logmel_check.bin                        float32 log mel of the first clip, (n_mels, frames)
+    manifest.json                           shapes, features, calibration, fusion, clip index
     calib_scores.json                       calibration split logits and labels, in pipeline order
     test_scores.json                        seen and unseen test split logits and labels
     reference.json                          PyTorch logits, probabilities and decisions per exported
@@ -31,6 +32,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import zlib
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -110,6 +112,31 @@ class SubsetSource:
 
     def __len__(self) -> int:
         return len(self._records)
+
+
+def encode_clip(frames: np.ndarray, audio: np.ndarray) -> bytes:
+    """Lossless packing: left then temporal prediction on frames, first difference on audio."""
+    f = frames.astype(np.int16)
+    left = f.copy()
+    left[:, :, 1:] = f[:, :, 1:] - f[:, :, :-1]
+    residual = left.copy()
+    residual[1:] = left[1:] - left[:-1]
+    a = audio.astype(np.int32)
+    diff = a.copy()
+    diff[1:] = a[1:] - a[:-1]
+    payload = (residual % 256).astype(np.uint8).tobytes() + diff.astype("<i2").tobytes()
+    return zlib.compress(payload, 9)
+
+
+def decode_clip(blob: bytes, shape: tuple[int, ...]) -> tuple[bytes, bytes]:
+    raw = zlib.decompress(blob)
+    size = int(np.prod(shape))
+    residual = np.frombuffer(raw[:size], np.uint8).reshape(shape).astype(np.int64)
+    left = np.cumsum(residual, axis=0) % 256
+    frames = (np.cumsum(left, axis=2) % 256).astype(np.uint8)
+    diff = np.frombuffer(raw[size:], "<i2").astype(np.int64)
+    audio = ((np.cumsum(diff) + 32768) % 65536 - 32768).astype("<i2")
+    return frames.tobytes(), audio.tobytes()
 
 
 def combo(record: ClipRecord) -> str:
@@ -247,9 +274,10 @@ def main() -> None:
         check_close(f"{stream} platt b", fitted.b, saved["calibrator"]["b"], 1e-12)
         point = threshold_at_precision(fitted.predict(calib[stream]), clip_labels, target)
         check_close(f"{stream} threshold", point.threshold, saved["operating"]["threshold"], 1e-12)
-    probs = {
-        s: PlattCalibrator.from_dict(calibration[s]["calibrator"]).predict(calib[s]) for s in STREAMS
-    }
+    probs = {}
+    for stream in STREAMS:
+        platt_map = PlattCalibrator.from_dict(calibration[stream]["calibrator"])
+        probs[stream] = platt_map.predict(calib[stream])
     fusion = fit_fusion(probs["video"], probs["audio"], clip_labels, target)
     check_close("fusion weight", fusion.weight, calibration["fused"]["weight"], 1e-12)
     check_close(
@@ -278,7 +306,9 @@ def main() -> None:
             saved = results["metrics"][split][detector]
             for key in ("precision", "recall", "f1", "auc", "eer"):
                 check_close(f"{split} {detector} {key}", point[key], saved[key], 1e-9)
-    fused_flag = {c: bool(test_probs["fused"][i] >= thresholds["fused"]) for i, c in enumerate(test_ids)}
+    fused_flag = {
+        c: bool(test_probs["fused"][i] >= thresholds["fused"]) for i, c in enumerate(test_ids)
+    }
 
     print("[2/5] choosing clips")
     gallery_identity, gallery, picks = select_clips(records, split_of, fused_flag, unseen)
@@ -286,8 +316,8 @@ def main() -> None:
 
     print("[3/5] writing clips, filterbank and scores")
     (out / "clips").mkdir(parents=True, exist_ok=True)
-    for stale in (out / "clips").glob("*.bin"):
-        if stale.stem not in picks:
+    for stale in (out / "clips").iterdir():
+        if stale.suffix != ".zlib" or stale.stem not in picks:
             stale.unlink()
     rate = int(meta["sample_rate"])
     reference_clips: dict[str, dict] = {}
@@ -299,7 +329,10 @@ def main() -> None:
         with np.load(source.path_for(clip_id)) as data:
             frames = np.ascontiguousarray(data["video"], dtype=np.uint8)
             audio = np.ascontiguousarray(data["audio"], dtype="<i2")
-        (out / "clips" / f"{clip_id}.bin").write_bytes(frames.tobytes() + audio.tobytes())
+        encoded = encode_clip(frames, audio)
+        if decode_clip(encoded, frames.shape) != (frames.tobytes(), audio.tobytes()):
+            raise SystemExit(f"export check failed: {clip_id} does not round trip")
+        (out / "clips" / f"{clip_id}.zlib").write_bytes(encoded)
         wave = audio.astype(np.float32) / 32767.0
         steps_by_clip[clip_id] = {
             "video": video_steps(frames)[None],
@@ -352,9 +385,8 @@ def main() -> None:
         with torch.no_grad():
             for clip_id in picks:
                 got = float(graph(torch.from_numpy(steps_by_clip[clip_id][stream]))[0])
-                check_close(
-                    f"{clip_id} {stream} graph", got, reference_clips[clip_id][f"{stream}_logit"], 1e-5
-                )
+                want = reference_clips[clip_id][f"{stream}_logit"]
+                check_close(f"{clip_id} {stream} graph", got, want, 1e-5)
         export_graph(graph, shape, out / "models" / f"{stream}.onnx")
         graphs[stream] = graph
 
@@ -418,6 +450,11 @@ def main() -> None:
             "logmel_check_clip": first,
             "logmel_check_shape": list(check_mel.shape),
         },
+        "clip_encoding": (
+            "zlib deflate of uint8 frame residuals (T, H, W, 3), left difference along W then "
+            "temporal difference along T, modulo 256, followed by int16 little endian first "
+            "differences of the audio, modulo 65536"
+        ),
         "models": {
             s: {"path": f"models/{s}.onnx", "input": "steps", "output": "logit", "shape": shapes[s]}
             for s in STREAMS

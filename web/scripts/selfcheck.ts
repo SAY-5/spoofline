@@ -8,6 +8,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { inflateSync } from "node:zlib";
 import * as ort from "onnxruntime-node";
 import {
   countsAt,
@@ -39,6 +40,10 @@ function close(name: string, got: number, want: number, tol: number): void {
 
 function readJson<T>(name: string): T {
   return JSON.parse(readFileSync(join(DATA, name), "utf8")) as T;
+}
+function readClip(id: string): ArrayBuffer {
+  const bytes = inflateSync(readFileSync(join(DATA, "clips", `${id}.zlib`)));
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
 }
 function readBuffer(name: string): ArrayBuffer {
   const bytes = readFileSync(join(DATA, name));
@@ -76,7 +81,7 @@ async function main(): Promise<void> {
   // Log mel front end against torchaudio.
   const checkClip = manifest.features.logmel_check_clip;
   const torchMel = new Float32Array(readBuffer("logmel_check.bin"));
-  const clipForMel = decodeClip(readBuffer(`clips/${checkClip}.bin`), manifest.corpus);
+  const clipForMel = decodeClip(readClip(checkClip), manifest.corpus);
   const mel = logMel(clipForMel.audio, fbank);
   const [nMels, nFrames] = manifest.features.logmel_check_shape;
   check("log mel shape matches torchaudio", mel.frames === nFrames && nMels === N_MELS, `${mel.frames} frames`);
@@ -144,7 +149,7 @@ async function main(): Promise<void> {
   };
   let worstLogit = 0;
   for (const entry of manifest.clips) {
-    const clip = decodeClip(readBuffer(`clips/${entry.id}.bin`), manifest.corpus);
+    const clip = decodeClip(readClip(entry.id), manifest.corpus);
     const want = reference.clips[entry.id]!;
     const logits: Record<Stream, number> = { video: 0, audio: 0 };
     for (const stream of streams) {

@@ -52,6 +52,7 @@ export interface Manifest {
   unseen_families: string[];
   families: Record<string, string>;
   corpus: CorpusShape;
+  clip_encoding: string;
   features: {
     audio_scale: number;
     n_fft: number;

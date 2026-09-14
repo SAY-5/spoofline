@@ -87,6 +87,7 @@ test clips from a `make demo` run, and `npm run selfcheck` holds every logit to 
 | version | feature |
 | --- | --- |
 | [v1.0.0](https://github.com/SAY-5/spoofline/releases/tag/v1.0.0) | baseline: two CNN-LSTM streams, per-stream Platt calibration at a target precision, weighted fusion, leave-one-family-out evaluation |
+| [v2.0.0](https://github.com/SAY-5/spoofline/releases/tag/v2.0.0) | evaluation you can trust: `spoofline sweep` over 3 seeds and all 16 leave-two-families-out splits, mean, std and bootstrap 95% intervals per detector |
 
 `CHANGELOG.md` has the detail for every version.
 
@@ -311,6 +312,129 @@ numbers on the unseen split (0.941 / 0.600). The AND rule is the other extreme:
 precision 1.000 at recall 0.113.
 
 
+## Variance over seeds and held out families
+
+The demo above is one seed with one held out pair. `spoofline sweep` repeats the
+whole protocol for every pairing of one held out video family with one held out
+audio family (4 x 4 = 16 splits) and for several seeds, then reports the mean,
+the sample standard deviation and a percentile bootstrap 95 percent interval of
+the mean over all runs.
+
+```bash
+uv run spoofline sweep                          # reduced profile, 3 seeds, 4 worker processes
+uv run spoofline sweep --seeds 5 --workers 6
+```
+
+**The variance table below comes from the reduced profile, not from the full demo
+profile.** Sixteen splits times three seeds of full size training do not fit on a
+CPU, so the sweep runs the `reduced` profile: 960 clips from 80 identities, 8
+frames of 64x64 and 1.0 s of audio per clip, 8 video epochs and 6 audio epochs at
+batch 16, 2 threads per run with 4 runs in parallel. The profile was sized on wall
+clock and on the validation loss inside the training identities only; no test
+split, seen or unseen, was looked at while choosing it. Its streams are weaker
+than the full profile's, so compare its numbers with each other rather than with
+the demo run. This sweep took 1125 s on the same 10 core machine while another CPU
+heavy job was running on it.
+
+```
+$ uv run spoofline sweep
+==============================================================================
+spoofline sweep   profile=reduced   seeds=3   held out pairs=16   runs=48
+==============================================================================
+corpus            960 clips, 80 identities, 8 frames of 64x64, 1.0 s at 16000 Hz
+training          video 8 epochs, audio 6 epochs, batch 16, 2 threads per run
+seeds             20250117, 20250118, 20250119
+target precision  0.95 on the calib split of every run
+
+mean, sample std and bootstrap 95% interval of the mean over runs
+  split       detector  metric        mean    std   ci low  ci high
+  seen_test   video     precision    0.979  0.028    0.971    0.986
+  seen_test   video     recall       0.560  0.091    0.535    0.585
+  seen_test   video     f1           0.708  0.076    0.687    0.729
+  seen_test   video     eer          0.306  0.059    0.290    0.323
+  seen_test   video     auc          0.762  0.066    0.743    0.780
+  seen_test   audio     precision    0.991  0.014    0.987    0.995
+  seen_test   audio     recall       0.494  0.108    0.465    0.525
+  seen_test   audio     f1           0.652  0.097    0.626    0.679
+  seen_test   audio     eer          0.269  0.045    0.257    0.282
+  seen_test   audio     auc          0.807  0.048    0.794    0.821
+  seen_test   fused     precision    0.985  0.016    0.980    0.989
+  seen_test   fused     recall       0.834  0.088    0.810    0.859
+  seen_test   fused     f1           0.901  0.052    0.886    0.916
+  seen_test   fused     eer          0.119  0.055    0.103    0.134
+  seen_test   fused     auc          0.939  0.040    0.928    0.950
+  unseen_test video     precision    0.934  0.095    0.906    0.958
+  unseen_test video     recall       0.412  0.166    0.367    0.458
+  unseen_test video     f1           0.556  0.172    0.507    0.603
+  unseen_test video     eer          0.366  0.113    0.336    0.399
+  unseen_test video     auc          0.690  0.127    0.654    0.725
+  unseen_test audio     precision    0.939  0.067    0.921    0.958
+  unseen_test audio     recall       0.268  0.121    0.235    0.302
+  unseen_test audio     f1           0.403  0.142    0.364    0.442
+  unseen_test audio     eer          0.363  0.101    0.335    0.391
+  unseen_test audio     auc          0.684  0.126    0.648    0.718
+  unseen_test fused     precision    0.944  0.048    0.930    0.957
+  unseen_test fused     recall       0.566  0.132    0.529    0.602
+  unseen_test fused     f1           0.699  0.113    0.666    0.729
+  unseen_test fused     eer          0.274  0.092    0.248    0.301
+  unseen_test fused     auc          0.794  0.094    0.767    0.820
+
+derived, per run then summarised
+  unseen fused precision minus best single stream  -0.038  0.043   -0.050   -0.026
+  seen minus unseen fused precision                 0.041  0.041    0.029    0.052
+
+unseen test precision and recall per held out pair, mean over seeds
+  video family      audio family       video P audio P fused P fused R
+  video_replay      audio_replay         0.949   0.965   0.960   0.560
+  video_replay      audio_vocoder        0.920   0.964   0.952   0.668
+  video_replay      audio_conversion     0.917   0.954   0.922   0.507
+  video_replay      audio_splice         0.973   1.000   0.970   0.744
+  video_print       audio_replay         0.871   0.926   0.913   0.487
+  video_print       audio_vocoder        0.871   0.985   0.943   0.566
+  video_print       audio_conversion     0.803   0.969   0.920   0.619
+  video_print       audio_splice         0.883   0.924   0.924   0.591
+  video_splice      audio_replay         1.000   0.907   0.974   0.573
+  video_splice      audio_vocoder        0.973   0.910   0.959   0.578
+  video_splice      audio_conversion     0.978   0.970   0.986   0.624
+  video_splice      audio_splice         0.979   0.884   0.943   0.526
+  video_recompress  audio_replay         0.881   0.912   0.920   0.424
+  video_recompress  audio_vocoder        0.938   0.923   0.899   0.575
+  video_recompress  audio_conversion     1.000   0.922   0.964   0.508
+  video_recompress  audio_splice         1.000   0.916   0.954   0.498
+
+wall clock        1124.8s
+==============================================================================
+```
+
+Each run's raw logits are cached in `runs/sweep/<profile>/seed_<seed>/`, keyed by
+a hash of the profile, so a second `spoofline sweep` recomputes calibration, fusion
+and every metric from the cache in seconds instead of retraining.
+
+### What the sweep says
+
+* **Fused precision mostly holds across the seen to unseen boundary.** Over 48
+  runs it is 0.985 on seen families and 0.944 on unseen ones, a drop of 0.041 with
+  an interval of 0.029 to 0.052, which leaves the unseen mean just under the 0.95
+  calibration target.
+* **It is below the best single stream of the same run, and that is the typical
+  outcome.** Per run, fused unseen precision minus the better of the two streams
+  averages -0.038 (interval -0.050 to -0.026). The fused mean of 0.944 is above
+  both stream means (video 0.934, audio 0.939) only because which stream wins
+  changes from run to run. The demo's `BELOW` verdict was not bad luck.
+* **What fusion buys is recall.** On unseen families fused recall is 0.566
+  against 0.412 for video and 0.268 for audio, F1 0.699 against 0.556 and 0.403,
+  and AUC 0.794 against 0.690 and 0.684.
+* **Single runs are noisy.** The standard deviation over runs is 0.095 for unseen
+  video precision and 0.132 for unseen fused recall, so differences of a few
+  points in the single run demo are inside the noise.
+* **Some held out pairs are much harder than others.** Fused unseen recall ranges
+  from 0.424 with `video_recompress` and `audio_replay` held out to 0.744 with
+  `video_replay` and `audio_splice`; fused unseen precision ranges from 0.899 to
+  0.986.
+* **The intervals are a lower bound on the uncertainty.** The bootstrap resamples
+  runs as if they were independent, but runs that share a seed share a corpus and
+  identity pools.
+
 ## Plugging in a real corpus
 
 `spoofline/data/sources.py` defines the `ClipSource` protocol:
@@ -349,10 +473,10 @@ generated one. `tests/test_sources.py` exercises the adapter on a written out cl
 * **The clips are small.** 16 frames of 64x64 and two seconds of 16 kHz audio, so
   the whole demo fits in seven minutes of CPU. Real face forensics works at much
   higher resolution and a print or replay attack is far subtler there.
-* **One seed, one held out pair.** Everything above is a single run with
-  `video_splice` and `audio_vocoder` held out. There is no variance estimate over
-  seeds or over the choice of held out family, so differences of a point or two
-  between detectors should not be read as real.
+* **The demo is one seed and one held out pair.** The demo block is a single run
+  with `video_splice` and `audio_vocoder` held out. The sweep adds variance over
+  3 seeds and all 16 held out pairs, but only on the reduced profile; no full
+  profile sweep has been run.
 * **The threshold is fitted on 234 clips.** Choosing the lowest threshold that
   reaches the target precision is the most optimistic choice available on a finite
   calibration set, so some of the seen to unseen drop is threshold sampling noise
@@ -374,7 +498,7 @@ generated one. `tests/test_sources.py` exercises the adapter on a written out cl
 
 ```
 spoofline/
-  config.py          run profiles (full, tiny) and all hyperparameters
+  config.py          run profiles (full, reduced, tiny) and all hyperparameters
   seeding.py         seed derivation, torch and numpy seeding
   families.py        the eight attack families
   metrics.py         precision, recall, F1, AUC, EER, per-family breakdown
@@ -382,6 +506,7 @@ spoofline/
   fusion.py          weighted score fusion plus AND and OR rules
   train.py           per-stream training and scoring
   pipeline.py        the end to end run and the single clip scorer
+  sweep.py           repeated seed, leave two families out sweep with bootstrap summaries
   report.py          the summary block
   cli.py             click commands
   data/

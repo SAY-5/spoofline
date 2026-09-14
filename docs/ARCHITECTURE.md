@@ -208,6 +208,23 @@ score range; and a per family detection rate at the operating point, with the
 bona fide row doubling as the false alarm rate. All of them are implemented in
 `spoofline/metrics.py` and checked against hand computed values in the tests.
 
+## Export and the deployment path
+
+The trained detector packs a normaliser, a step encoder, a packed LSTM, masked
+attention and a head. `ExportableDetector` folds the normaliser into the graph and
+drops the packing: a deployment scores clips that all have the same number of
+steps, so a batch carries no padding, and `pack_padded_sequence` on an unpadded
+batch is the identity. The attention mask is all true for the same reason, so the
+exported graph computes exactly what the training time module computes, which is
+what the 1e-4 parity check on real clips asserts. The batch and step axes are
+dynamic, traced with a batch of two so neither axis is specialised to a constant.
+
+`RunScorer` is the other half: it loads both checkpoints, both Platt maps and both
+fusions once, extracts features, runs batched forward passes, and returns per clip
+probabilities, flags, both decisions and the attribution. `spoofline score`,
+`spoofline robustness` and `spoofline bench` all go through it, so a clip scored by
+the CLI and a clip scored inside the robustness suite follow the same path.
+
 ## Determinism
 
 Every stochastic component draws from a generator derived from `(run seed, label)`

@@ -139,21 +139,34 @@ def evaluate_splits(
         y = labels[split]
         pv = probabilities["video"][split]
         pa = probabilities["audio"][split]
-        fused = fusion.fuse(pv, pa)
-        metrics[split] = {
-            "video": evaluate(pv, y, calibrations["video"].operating.threshold).as_dict(),
-            "audio": evaluate(pa, y, calibrations["audio"].operating.threshold).as_dict(),
-            "fused": evaluate(fused, y, fusion.operating.threshold).as_dict(),
-        }
-        rules[split] = {
-            "and": rule_metrics(and_rule(calibrations["video"], calibrations["audio"], pv, pa), y),
-            "or": rule_metrics(or_rule(calibrations["video"], calibrations["audio"], pv, pa), y),
-            "weighted": rule_metrics(fused >= fusion.operating.threshold, y),
-        }
+        metrics[split], rules[split] = split_metrics(pv, pa, y, calibrations, fusion)
         family_rates[split] = family_breakdown(
-            fused, y, _families(corpus, ids), fusion.operating.threshold
+            fusion.fuse(pv, pa), y, _families(corpus, ids), fusion.operating.threshold
         )
     return metrics, rules, family_rates
+
+
+def split_metrics(
+    p_video: np.ndarray,
+    p_audio: np.ndarray,
+    labels: np.ndarray,
+    calibrations: dict[str, StreamCalibration],
+    fusion: FusionModel,
+) -> tuple[dict[str, dict], dict[str, dict]]:
+    """Detector metrics and the decision rule comparison for one split."""
+    fused = fusion.fuse(p_video, p_audio)
+    video, audio = calibrations["video"], calibrations["audio"]
+    metrics = {
+        "video": evaluate(p_video, labels, video.operating.threshold).as_dict(),
+        "audio": evaluate(p_audio, labels, audio.operating.threshold).as_dict(),
+        "fused": evaluate(fused, labels, fusion.operating.threshold).as_dict(),
+    }
+    rules = {
+        "and": rule_metrics(and_rule(video, audio, p_video, p_audio), labels),
+        "or": rule_metrics(or_rule(video, audio, p_video, p_audio), labels),
+        "weighted": rule_metrics(fused >= fusion.operating.threshold, labels),
+    }
+    return metrics, rules
 
 
 def run_pipeline(

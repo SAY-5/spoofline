@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 RULE = "=" * 78
-DETECTOR_ORDER = ("video", "audio", "fused")
+DETECTOR_ORDER = ("video", "audio", "fused", "logistic")
+RULE_ORDER = ("and", "or", "weighted", "logistic")
+ATTRIBUTION_ORDER = ("none", "video", "audio", "either", "joint")
 
 
 def _counts_line(counts: dict[str, int]) -> str:
@@ -16,10 +18,10 @@ def _fmt(value: float, digits: int = 3) -> str:
     return f"{value:.{digits}f}"
 
 
-def _wrap_verdict(text: str) -> list[str]:
+def _wrap_verdict(text: str, label: str = "verdict") -> list[str]:
     """Break the verdict at the semicolon so the block stays inside 78 columns."""
     parts = [part.strip() for part in text.split(";")]
-    return [f"  verdict     {parts[0]}"] + [f"              {part}" for part in parts[1:]]
+    return [f"  {label:<12}{parts[0]}"] + [f"              {part}" for part in parts[1:]]
 
 
 def render_evaluation(results: dict) -> str:
@@ -43,7 +45,7 @@ def render_evaluation(results: dict) -> str:
     lines += ["", "decision rule comparison at the same thresholds"]
     lines.append(f"  {'split':<12}{'rule':<10}{'P':>7}{'R':>7}{'F1':>7}")
     for split in ("seen_test", "unseen_test"):
-        for rule in ("and", "or", "weighted"):
+        for rule in RULE_ORDER:
             entry = results["rules"][split][rule]
             lines.append(
                 f"  {split:<12}{rule:<10}"
@@ -58,6 +60,20 @@ def render_evaluation(results: dict) -> str:
                 f"  {split:<12}{family:<20}{int(row['n']):>6}{int(row['detected']):>10}"
                 f"{_fmt(row['rate']):>8}"
             )
+
+    lines += [
+        "",
+        "which stream triggered each fusion decision, silencing one stream at a time",
+        f"  {'split':<12}{'detector':<10}{'clips':<12}"
+        + "".join(f"{name:>7}" for name in ATTRIBUTION_ORDER),
+    ]
+    for split, detectors in results["attribution"].items():
+        for detector, rows in detectors.items():
+            for combo, counts in rows.items():
+                lines.append(
+                    f"  {split:<12}{detector:<10}{combo:<12}"
+                    + "".join(f"{counts[name]:>7}" for name in ATTRIBUTION_ORDER)
+                )
 
     return "\n".join(lines)
 
@@ -124,6 +140,18 @@ def render_summary(results: dict) -> str:
         f"   recall {fused['operating']['recall']:.3f}"
         f"   target met {str(fused['operating']['reached_target']).lower()}"
     )
+    logistic = calibration["logistic"]
+    coefficients = logistic["coefficients"]
+    lines += [
+        f"  {'logistic':<8} p_video {coefficients['p_video']:+.3f}"
+        f"  p_audio {coefficients['p_audio']:+.3f}"
+        f"  disagreement {coefficients['disagreement']:+.3f}"
+        f"  intercept {logistic['intercept']:+.3f}",
+        f"           threshold {logistic['operating']['threshold']:.4f}"
+        f"   calib precision {logistic['operating']['achieved_precision']:.3f}"
+        f"   recall {logistic['operating']['recall']:.3f}"
+        f"   target met {str(logistic['operating']['reached_target']).lower()}",
+    ]
 
     lines += render_evaluation(results).split("\n")
 
@@ -132,12 +160,18 @@ def render_summary(results: dict) -> str:
         "",
         "headline, unseen attack families",
         f"  precision   fused {_fmt(headline['fused_precision'])}"
+        f"   logistic {_fmt(headline['logistic_precision'])}"
         f"   video {_fmt(headline['video_precision'])}"
         f"   audio {_fmt(headline['audio_precision'])}",
         f"  recall      fused {_fmt(headline['fused_recall'])}"
+        f"   logistic {_fmt(headline['logistic_recall'])}"
         f"   video {_fmt(headline['video_recall'])}"
         f"   audio {_fmt(headline['audio_recall'])}",
+        f"  gap         precision minus best single stream: fused "
+        f"{headline['fused_precision_gap']:+.3f}   logistic "
+        f"{headline['logistic_precision_gap']:+.3f}",
         *_wrap_verdict(headline["verdict"]),
+        *_wrap_verdict(headline["logistic_verdict"], label="logistic"),
         "",
         "wall clock",
     ]
@@ -149,8 +183,10 @@ def render_summary(results: dict) -> str:
 
 
 DERIVED_LABELS = {
-    "unseen_precision_gap": "unseen fused precision minus best single stream",
+    "unseen_precision_gap": "unseen fused precision minus best stream",
+    "logistic_unseen_precision_gap": "unseen logistic precision minus best stream",
     "seen_to_unseen_precision_drop": "seen minus unseen fused precision",
+    "logistic_seen_to_unseen_precision_drop": "seen minus unseen logistic precision",
 }
 
 
@@ -189,6 +225,17 @@ def render_sweep(results: dict) -> str:
             for metric, entry in metrics.items():
                 lines.append(f"  {split:<12}{detector:<10}{metric:<11}{_summary_cells(entry)}")
 
+    lines += [
+        "",
+        "decision rules at the single stream thresholds, mean over runs",
+        f"  {'split':<12}{'rule':<10}{'metric':<11}{'mean':>7}{'std':>7}"
+        f"{'ci low':>9}{'ci high':>9}",
+    ]
+    for split, rules in aggregate["rules"].items():
+        for rule, metrics in rules.items():
+            for metric, entry in metrics.items():
+                lines.append(f"  {split:<12}{rule:<10}{metric:<11}{_summary_cells(entry)}")
+
     lines += ["", "derived, per run then summarised"]
     for name, entry in aggregate["derived"].items():
         lines.append(f"  {DERIVED_LABELS.get(name, name):<48}{_summary_cells(entry)}")
@@ -197,14 +244,14 @@ def render_sweep(results: dict) -> str:
         "",
         "unseen test precision and recall per held out pair, mean over seeds",
         f"  {'video family':<18}{'audio family':<18}{'video P':>8}{'audio P':>8}"
-        f"{'fused P':>8}{'fused R':>8}",
+        f"{'fused P':>8}{'logis P':>8}{'fused R':>8}",
     ]
     for row in results["per_pair"]:
         video_family, audio_family = row["pair"]
         lines.append(
             f"  {video_family:<18}{audio_family:<18}{_fmt(row['video_precision']):>8}"
             f"{_fmt(row['audio_precision']):>8}{_fmt(row['fused_precision']):>8}"
-            f"{_fmt(row['fused_recall']):>8}"
+            f"{_fmt(row['logistic_precision']):>8}{_fmt(row['fused_recall']):>8}"
         )
     lines += ["", f"wall clock        {results['wall_clock_s']:.1f}s", RULE]
     return "\n".join(lines)

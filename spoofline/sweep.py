@@ -36,9 +36,16 @@ Progress = Callable[[str], None] | None
 STREAMS = ("video", "audio")
 SCORED_SPLITS = ("calib", "seen_test", "unseen_test")
 TEST_SPLITS = ("seen_test", "unseen_test")
-DETECTORS = ("video", "audio", "fused")
+DETECTORS = ("video", "audio", "fused", "logistic")
 METRICS = ("precision", "recall", "f1", "eer", "auc")
-DERIVED = ("unseen_precision_gap", "seen_to_unseen_precision_drop")
+RULES = ("and", "or")
+RULE_METRICS = ("precision", "recall", "f1")
+DERIVED = (
+    "unseen_precision_gap",
+    "logistic_unseen_precision_gap",
+    "seen_to_unseen_precision_drop",
+    "logistic_seen_to_unseen_precision_drop",
+)
 
 
 def leave_two_out_pairs() -> tuple[Pair, ...]:
@@ -90,13 +97,15 @@ def summarise(values, confidence: float = 0.95) -> MetricSummary:
 
 
 def derived_metrics(metrics: dict) -> dict[str, float]:
-    """How far the fused precision sits from the best single stream and from seen families."""
+    """How far each fusion's precision sits from the best single stream and from seen families."""
     seen, unseen = metrics["seen_test"], metrics["unseen_test"]
     best_single = max(unseen["video"]["precision"], unseen["audio"]["precision"])
-    return {
-        "unseen_precision_gap": unseen["fused"]["precision"] - best_single,
-        "seen_to_unseen_precision_drop": seen["fused"]["precision"] - unseen["fused"]["precision"],
-    }
+    derived = {}
+    for detector, prefix in (("fused", ""), ("logistic", "logistic_")):
+        precision = unseen[detector]["precision"]
+        derived[f"{prefix}unseen_precision_gap"] = precision - best_single
+        derived[f"{prefix}seen_to_unseen_precision_drop"] = seen[detector]["precision"] - precision
+    return derived
 
 
 def aggregate(runs: Sequence[dict]) -> dict:
@@ -111,8 +120,18 @@ def aggregate(runs: Sequence[dict]) -> dict:
         }
         for split in TEST_SPLITS
     }
+    rules = {
+        split: {
+            rule: {
+                metric: asdict(summarise([run["rules"][split][rule][metric] for run in runs]))
+                for metric in RULE_METRICS
+            }
+            for rule in RULES
+        }
+        for split in TEST_SPLITS
+    }
     derived = {name: asdict(summarise([run["derived"][name] for run in runs])) for name in DERIVED}
-    return {"n_runs": len(runs), "metrics": table, "derived": derived}
+    return {"n_runs": len(runs), "metrics": table, "rules": rules, "derived": derived}
 
 
 def per_pair(runs: Sequence[dict]) -> list[dict]:
@@ -161,20 +180,23 @@ def evaluate_pair(arrays: dict[str, np.ndarray], target_precision: float) -> dic
     }
     labels = {split: arrays[f"label_{split}"] for split in SCORED_SPLITS}
     modality = {stream: arrays[f"modality_{stream}_calib"] for stream in STREAMS}
-    calibrations, probabilities, fusion = calibrate_all(raw, labels, target_precision, modality)
-    metrics = {}
+    calibrations, probabilities, fusions = calibrate_all(raw, labels, target_precision, modality)
+    metrics, rules = {}, {}
     for split in TEST_SPLITS:
-        metrics[split], _ = split_metrics(
+        metrics[split], split_rules = split_metrics(
             probabilities["video"][split],
             probabilities["audio"][split],
             labels[split],
             calibrations,
-            fusion,
+            fusions,
         )
+        rules[split] = {rule: split_rules[rule] for rule in RULES}
     return {
         "metrics": metrics,
+        "rules": rules,
         "derived": derived_metrics(metrics),
-        "fusion_weight": fusion.weight,
+        "fusion_weight": fusions["fused"].weight,
+        "logistic": fusions["logistic"].as_dict(),
     }
 
 

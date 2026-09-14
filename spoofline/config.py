@@ -74,6 +74,19 @@ TINY_CORPUS = CorpusConfig(
 
 _TINY_TRAIN = StreamTrainConfig(epochs=2, batch_size=4, hidden_size=32, embed_size=32)
 
+REDUCED_CORPUS = CorpusConfig(
+    name="reduced",
+    n_clips=960,
+    n_identities=80,
+    n_frames=8,
+    frame_size=64,
+    sample_rate=16000,
+    duration_s=1.0,
+)
+
+_REDUCED_VIDEO = StreamTrainConfig(epochs=8, batch_size=16)
+_REDUCED_AUDIO = StreamTrainConfig(epochs=6, batch_size=16)
+
 
 def profile(name: str) -> SpooflineConfig:
     """Return the configuration for a named run profile."""
@@ -91,7 +104,17 @@ def profile(name: str) -> SpooflineConfig:
             corpus_dir=FIXTURE_DIR,
             run_dir=REPO_ROOT / "runs" / "tiny",
         )
-    raise ValueError(f"unknown profile: {name!r} (expected 'full' or 'tiny')")
+    if name == "reduced":
+        return SpooflineConfig(
+            profile="reduced",
+            threads=2,
+            corpus=REDUCED_CORPUS,
+            video=_REDUCED_VIDEO,
+            audio=_REDUCED_AUDIO,
+            corpus_dir=REPO_ROOT / "data" / "reduced",
+            run_dir=REPO_ROOT / "runs" / "reduced",
+        )
+    raise ValueError(f"unknown profile: {name!r} (expected one of {PROFILE_NAMES})")
 
 
-PROFILE_NAMES = ("full", "tiny")
+PROFILE_NAMES = ("full", "reduced", "tiny")

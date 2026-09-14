@@ -23,7 +23,7 @@ export function DataNote({ data }: { data: DemoData }) {
         <h3>What runs in this tab</h3>
         <p>
           The {manifest.clips.length} clips here come from the test identities, which neither network trained on and which were not
-          used for calibration. For each clip the page decodes the raw uint8 frames and int16 samples, computes the video steps and the
+          used for calibration. For each clip the page unpacks the exact uint8 frames and int16 samples, computes the video steps and the
           log mel patches in TypeScript, and runs both trained networks as ONNX graphs under onnxruntime-web on WebAssembly. Platt
           scaling, the thresholds and the fusion rule are applied in TypeScript with the exported parameters. Nothing is sent to a
           server.

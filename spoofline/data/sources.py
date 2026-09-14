@@ -52,6 +52,17 @@ class ClipRecord:
     def families(self) -> tuple[str, ...]:
         return tuple(f for f in (self.video_family, self.audio_family) if f != BONAFIDE)
 
+    @property
+    def combo(self) -> str:
+        """Which modalities were attacked: bonafide, video_only, audio_only or both."""
+        if self.video_attacked and self.audio_attacked:
+            return "both"
+        if self.video_attacked:
+            return "video_only"
+        if self.audio_attacked:
+            return "audio_only"
+        return "bonafide"
+
     def as_dict(self) -> dict:
         return asdict(self)
 

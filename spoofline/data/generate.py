@@ -150,17 +150,7 @@ def family_counts(records: Iterable[ClipRecord]) -> dict[str, int]:
 
 
 def combo_counts(records: Iterable[ClipRecord]) -> dict[str, int]:
-    counts: Counter[str] = Counter()
-    for record in records:
-        if record.video_attacked and record.audio_attacked:
-            counts["both"] += 1
-        elif record.video_attacked:
-            counts["video_only"] += 1
-        elif record.audio_attacked:
-            counts["audio_only"] += 1
-        else:
-            counts["bonafide"] += 1
-    return dict(sorted(counts.items()))
+    return dict(sorted(Counter(record.combo for record in records).items()))
 
 
 def generate_corpus(

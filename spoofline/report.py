@@ -255,3 +255,49 @@ def render_sweep(results: dict) -> str:
         )
     lines += ["", f"wall clock        {results['wall_clock_s']:.1f}s", RULE]
     return "\n".join(lines)
+
+
+def _severity_label(row: dict) -> str:
+    if row["severity"] is None:
+        return "none"
+    value = row["severity"]
+    number = f"{value:g}"
+    return f"{row['unit']} {number}"
+
+
+def render_robustness(results: dict) -> str:
+    """Render the false alarm and abstain tables that `spoofline robustness` prints."""
+    counts = results["bonafide_clips"]
+    detectors = ("video", "audio", "fused", "logistic")
+    lines = [
+        RULE,
+        f"spoofline robustness   profile={results['profile']}   run={results['run_dir']}",
+        RULE,
+        f"bona fide test clips  {sum(counts.values())} ({_counts_line(counts)}), "
+        "each degraded, label kept",
+        "",
+        "false alarm rate at the calibrated thresholds, per perturbation and severity",
+        f"  {'perturbation':<21}{'stream':<7}{'severity':<14}"
+        + "".join(f"{name:>9}" for name in detectors),
+    ]
+    for row in results["false_alarms"]:
+        lines.append(
+            f"  {row['perturbation']:<21}{row['stream']:<7}{_severity_label(row):<14}"
+            + "".join(f"{_fmt(row[name]):>9}" for name in detectors)
+        )
+    lines += [
+        "",
+        "abstain when |p_video - p_audio| exceeds the margin, coverage against precision",
+        f"  {'split':<12}{'detector':<10}{'margin':>7}{'coverage':>10}{'P':>7}{'R':>7}"
+        f"{'abst att':>10}{'abst bona':>10}",
+    ]
+    for split, by_detector in results["abstain"].items():
+        for detector, rows in by_detector.items():
+            for row in rows:
+                lines.append(
+                    f"  {split:<12}{detector:<10}{row['margin']:>7.2f}{_fmt(row['coverage']):>10}"
+                    f"{_fmt(row['precision']):>7}{_fmt(row['recall']):>7}"
+                    f"{row['abstained_attacks']:>10}{row['abstained_bonafide']:>10}"
+                )
+    lines.append(RULE)
+    return "\n".join(lines)

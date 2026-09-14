@@ -23,6 +23,7 @@ from .pipeline import (
     score_single_clip,
 )
 from .report import render_evaluation
+from .robustness import run_robustness
 from .seeding import seed_everything
 from .sweep import run_sweep
 from .train import score_clips, train_stream
@@ -253,6 +254,19 @@ def sweep_command(
     click.echo("")
     click.echo(result.summary)
     click.echo(f"artifacts in {result.out_dir}")
+
+
+@main.command()
+@PROFILE_OPTION
+@click.option("--corpus-dir", type=click.Path(), default=None)
+@click.option("--run-dir", type=click.Path(), default=None)
+def robustness(profile: str, corpus_dir: str | None, run_dir: str | None) -> None:
+    """False alarms on degraded bona fide clips, and coverage when the streams disagree."""
+    config = _config(profile, None, corpus_dir, run_dir)
+    result = run_robustness(config, Path(config.run_dir), progress=click.echo)
+    click.echo("")
+    click.echo(result.summary)
+    click.echo(f"wrote {result.run_dir / 'robustness.json'}")
 
 
 if __name__ == "__main__":  # pragma: no cover

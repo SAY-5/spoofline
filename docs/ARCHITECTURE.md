@@ -159,6 +159,25 @@ than the better single stream *on the calibration split*. Whether that survives
 the move to unseen families is the empirical question, and the README reports the
 measured answer rather than an assumed one.
 
+A second fusion is learned rather than grid searched. A logistic regression takes
+three features per clip,
+
+```
+x = [ p_video, p_audio, |p_video - p_audio| ]
+p_logistic = sigmoid(w . x + b)
+```
+
+and is fitted by Newton's method with an L2 penalty of 1.0 on the weights (the
+intercept is not penalised) against the clip label of the calibration split. Since
+`max(p_v, p_a) = (p_v + p_a) / 2 + |p_v - p_a| / 2`, the disagreement feature lets a
+linear model express an OR of the streams as well as an average. Its operating
+point is chosen by the same precision constrained search as every other detector.
+
+Every fusion decision is attributed by silencing one stream at a time, setting its
+probability to 0 and asking the fusion again: `video` or `audio` when only that
+stream keeps the clip flagged, `either` when each alone does, `joint` when only the
+two together do, and `none` for a clip that is not flagged.
+
 Two reference rules are reported next to the weighted sum, both using the single
 stream thresholds:
 

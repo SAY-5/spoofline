@@ -1,5 +1,5 @@
-import "@fontsource-variable/big-shoulders-display/wght.css";
-import "@fontsource-variable/spline-sans-mono/wght.css";
+import "@fontsource-variable/big-shoulders-display";
+import "@fontsource-variable/spline-sans-mono";
 import "./styles.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

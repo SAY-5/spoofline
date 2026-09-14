@@ -202,3 +202,41 @@ export function precisionRecall(c: Counts): { precision: number; recall: number 
     recall: c.tp + c.fn ? c.tp / (c.tp + c.fn) : 0,
   };
 }
+
+export interface PrCurve {
+  thresholds: Float64Array;
+  precision: Float64Array;
+  recall: Float64Array;
+}
+
+/** Precision and recall of `score >= t` at every distinct score, ascending in t. */
+export function precisionRecallCurve(scores: ArrayLike<number>, labels: ArrayLike<number>): PrCurve {
+  const n = scores.length;
+  const order = Array.from({ length: n }, (_, i) => i).sort((i, j) => scores[i]! - scores[j]!);
+  let totalPos = 0;
+  for (let i = 0; i < n; i++) if (labels[i] === 1) totalPos++;
+  const thresholds: number[] = [];
+  const precision: number[] = [];
+  const recall: number[] = [];
+  let tp = totalPos;
+  let fp = n - totalPos;
+  let k = 0;
+  while (k < n) {
+    const t = scores[order[k]!]!;
+    if (tp + fp > 0) {
+      thresholds.push(t);
+      precision.push(tp / (tp + fp));
+      recall.push(totalPos ? tp / totalPos : 0);
+    }
+    while (k < n && scores[order[k]!]! === t) {
+      if (labels[order[k]!] === 1) tp--;
+      else fp--;
+      k++;
+    }
+  }
+  return {
+    thresholds: Float64Array.from(thresholds),
+    precision: Float64Array.from(precision),
+    recall: Float64Array.from(recall),
+  };
+}

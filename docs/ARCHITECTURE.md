@@ -102,6 +102,26 @@ counting a negative.
 Inside the training split a further fraction of *identities* is held out to
 report a validation loss.
 
+## The sweep: every leave two families out split
+
+One held out pair is one draw. `spoofline sweep` enumerates all 16 pairings of a
+held out video family with a held out audio family and runs each of them under
+several seeds. For every (seed, pair) run:
+
+1. the corpus for that seed is generated once and shared by its 16 runs,
+2. `make_splits` is called with the pair as the unseen families, so neither held
+   out family can reach the train or calib split,
+3. both streams are trained and their raw logits on calib, seen_test and
+   unseen_test are cached with a hash of the profile,
+4. calibration, fusion and metrics are recomputed from the cached logits.
+
+Runs execute in a spawn process pool, each with the profile's fixed thread count,
+so a run's numbers do not depend on how many workers ran beside it. The aggregate
+is the mean and sample standard deviation over runs, and a percentile bootstrap
+interval of the mean from 4000 resamples of the runs. Two derived quantities are
+computed per run before summarising: fused unseen precision minus the better
+single stream of that run, and seen minus unseen fused precision.
+
 ## Calibration
 
 Raw logits from two independently trained networks are not comparable. For each

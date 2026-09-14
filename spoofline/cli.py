@@ -10,7 +10,7 @@ import click
 import numpy as np
 
 from .calibrate import OperatingThreshold, PlattCalibrator, StreamCalibration
-from .config import PROFILE_NAMES, SpooflineConfig
+from .config import PROFILE_NAMES, REPO_ROOT, SpooflineConfig
 from .config import profile as load_profile
 from .data.dataset import load_corpus, make_splits, save_splits
 from .data.generate import combo_counts, family_counts, generate_corpus
@@ -25,6 +25,7 @@ from .pipeline import (
 )
 from .report import render_evaluation
 from .seeding import seed_everything
+from .sweep import run_sweep
 from .train import score_clips, train_stream
 
 PROFILE_OPTION = click.option(
@@ -239,6 +240,44 @@ def pipeline(
     click.echo("")
     click.echo(result.summary)
     click.echo(f"artifacts in {result.run_dir}")
+
+
+@main.command("sweep")
+@click.option("--profile", type=click.Choice(PROFILE_NAMES), default="reduced", show_default=True)
+@SEED_OPTION
+@click.option(
+    "--seeds",
+    "n_seeds",
+    type=click.IntRange(min=1),
+    default=3,
+    show_default=True,
+    help="Number of consecutive run seeds, starting at the profile seed.",
+)
+@click.option(
+    "--workers",
+    type=click.IntRange(min=1),
+    default=4,
+    show_default=True,
+    help="Training processes run in parallel.",
+)
+@click.option("--corpus-root", type=click.Path(), default=None)
+@click.option("--out-dir", type=click.Path(), default=None)
+def sweep_command(
+    profile: str,
+    seed: int | None,
+    n_seeds: int,
+    workers: int,
+    corpus_root: str | None,
+    out_dir: str | None,
+) -> None:
+    """Repeat the evaluation over seeds and all 16 leave two families out splits."""
+    config = _config(profile, seed, None, None)
+    corpus = Path(corpus_root) if corpus_root else REPO_ROOT / "data" / "sweep" / config.profile
+    out = Path(out_dir) if out_dir else REPO_ROOT / "runs" / "sweep" / config.profile
+    result = run_sweep(config, n_seeds, workers, corpus, out, progress=click.echo)
+    click.echo("")
+    click.echo(result.summary)
+    click.echo(f"artifacts in {result.out_dir}")
 
 
 if __name__ == "__main__":  # pragma: no cover

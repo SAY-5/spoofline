@@ -146,3 +146,65 @@ def render_summary(results: dict) -> str:
         lines.append(f"  {name:<16}{seconds:8.1f}s")
     lines.append(RULE)
     return "\n".join(lines)
+
+
+DERIVED_LABELS = {
+    "unseen_precision_gap": "unseen fused precision minus best single stream",
+    "seen_to_unseen_precision_drop": "seen minus unseen fused precision",
+}
+
+
+def _summary_cells(entry: dict) -> str:
+    return (
+        f"{_fmt(entry['mean']):>7}{_fmt(entry['std']):>7}"
+        f"{_fmt(entry['ci_low']):>9}{_fmt(entry['ci_high']):>9}"
+    )
+
+
+def render_sweep(results: dict) -> str:
+    """Render the variance table that `spoofline sweep` prints."""
+    settings = results["profile_settings"]
+    corpus = settings["corpus"]
+    aggregate = results["aggregate"]
+    lines = [
+        RULE,
+        f"spoofline sweep   profile={results['profile']}   seeds={len(results['seeds'])}"
+        f"   held out pairs={len(results['pairs'])}   runs={aggregate['n_runs']}",
+        RULE,
+        f"corpus            {corpus['n_clips']} clips, {corpus['n_identities']} identities, "
+        f"{corpus['n_frames']} frames of {corpus['frame_size']}x{corpus['frame_size']}, "
+        f"{corpus['duration_s']} s at {corpus['sample_rate']} Hz",
+        f"training          video {settings['video_epochs']} epochs, audio "
+        f"{settings['audio_epochs']} epochs, batch {settings['batch_size']}, "
+        f"{settings['threads_per_run']} threads per run",
+        f"seeds             {', '.join(str(seed) for seed in results['seeds'])}",
+        f"target precision  {results['target_precision']:.2f} on the calib split of every run",
+        "",
+        "mean, sample std and bootstrap 95% interval of the mean over runs",
+        f"  {'split':<12}{'detector':<10}{'metric':<11}{'mean':>7}{'std':>7}"
+        f"{'ci low':>9}{'ci high':>9}",
+    ]
+    for split, detectors in aggregate["metrics"].items():
+        for detector, metrics in detectors.items():
+            for metric, entry in metrics.items():
+                lines.append(f"  {split:<12}{detector:<10}{metric:<11}{_summary_cells(entry)}")
+
+    lines += ["", "derived, per run then summarised"]
+    for name, entry in aggregate["derived"].items():
+        lines.append(f"  {DERIVED_LABELS.get(name, name):<48}{_summary_cells(entry)}")
+
+    lines += [
+        "",
+        "unseen test precision and recall per held out pair, mean over seeds",
+        f"  {'video family':<18}{'audio family':<18}{'video P':>8}{'audio P':>8}"
+        f"{'fused P':>8}{'fused R':>8}",
+    ]
+    for row in results["per_pair"]:
+        video_family, audio_family = row["pair"]
+        lines.append(
+            f"  {video_family:<18}{audio_family:<18}{_fmt(row['video_precision']):>8}"
+            f"{_fmt(row['audio_precision']):>8}{_fmt(row['fused_precision']):>8}"
+            f"{_fmt(row['fused_recall']):>8}"
+        )
+    lines += ["", f"wall clock        {results['wall_clock_s']:.1f}s", RULE]
+    return "\n".join(lines)

@@ -301,3 +301,22 @@ def render_robustness(results: dict) -> str:
                 )
     lines.append(RULE)
     return "\n".join(lines)
+
+
+def render_latency(results: dict) -> str:
+    """Render the per clip latency table that `spoofline bench` prints."""
+    lines = [
+        RULE,
+        f"spoofline bench   clips={results['clips']}   threads={results['threads']}   CPU",
+        RULE,
+        "per clip wall time; a stream includes its feature extraction, end to end adds",
+        "npz decode, calibration, both fusions and attribution",
+        f"  {'engine':<8}{'stage':<12}{'p50 ms':>9}{'p95 ms':>9}{'mean ms':>9}{'n':>6}",
+    ]
+    for row in results["rows"]:
+        lines.append(
+            f"  {row['engine']:<8}{row['stage']:<12}{row['p50_ms']:>9.2f}{row['p95_ms']:>9.2f}"
+            f"{row['mean_ms']:>9.2f}{row['n']:>6}"
+        )
+    lines.append(RULE)
+    return "\n".join(lines)

@@ -32,7 +32,7 @@ from .fusion import (
     rule_metrics,
 )
 from .metrics import evaluate, family_breakdown
-from .models.cnn_lstm import load_checkpoint, save_checkpoint
+from .models.cnn_lstm import save_checkpoint
 from .report import render_summary
 from .seeding import seed_everything
 from .train import TrainedStream, score_clips, train_stream
@@ -352,43 +352,3 @@ def load_calibration(run_dir: Path) -> tuple[dict[str, StreamCalibration], Fusio
         "logistic": LogisticFusion.from_dict(payload["logistic"]),
     }
     return calibrations, fusions
-
-
-def score_single_clip(run_dir: Path, clip_path: Path, sample_rate: int | None = None) -> dict:
-    """Score one npz clip with the checkpoints and calibration from a finished run."""
-    import torch
-
-    from .data.features import log_mel, mel_patches, video_steps
-
-    calibrations, fusions = load_calibration(Path(run_dir))
-    video_model, video_norm, _ = load_checkpoint(Path(run_dir) / "video.pt")
-    audio_model, audio_norm, _ = load_checkpoint(Path(run_dir) / "audio.pt")
-    rate = sample_rate or 16000
-
-    with np.load(clip_path) as data:
-        frames = data["video"]
-        audio = data["audio"].astype(np.float32) / 32767.0
-
-    with torch.no_grad():
-        v_steps = torch.from_numpy(video_steps(frames))[None]
-        v_logit = float(video_model(video_norm.apply(v_steps), torch.tensor([v_steps.shape[1]]))[0])
-        a_steps = torch.from_numpy(mel_patches(log_mel(audio, rate)))[None]
-        a_logit = float(audio_model(audio_norm.apply(a_steps), torch.tensor([a_steps.shape[1]]))[0])
-
-    pv = float(calibrations["video"].probabilities([v_logit])[0])
-    pa = float(calibrations["audio"].probabilities([a_logit])[0])
-    weighted, logistic = fusions["fused"], fusions["logistic"]
-    return {
-        "clip": str(clip_path),
-        "video_logit": v_logit,
-        "audio_logit": a_logit,
-        "video_probability": pv,
-        "audio_probability": pa,
-        "fused_probability": float(weighted.fuse(pv, pa)),
-        "logistic_probability": float(logistic.fuse(pv, pa)[0]),
-        "video_flags": bool(calibrations["video"].decide([v_logit])[0]),
-        "audio_flags": bool(calibrations["audio"].decide([a_logit])[0]),
-        "decision": "attack" if bool(weighted.decide(pv, pa)) else "bonafide",
-        "logistic_decision": "attack" if bool(logistic.decide(pv, pa)[0]) else "bonafide",
-        "triggered_by": attribute(weighted.decide, [pv], [pa])[0],
-    }

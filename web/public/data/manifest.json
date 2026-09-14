@@ -1,0 +1,423 @@
+{
+  "trained_from_commit": "7181cf425af215ebadfee6506e50f70899b66ac5",
+  "seed": 20250117,
+  "profile": "full",
+  "target_precision": 0.95,
+  "unseen_families": [
+    "video_splice",
+    "audio_vocoder"
+  ],
+  "families": {
+    "video_replay": "screen re-capture: resampling moire, refresh banding, gamma shift, bezel crop, rotation",
+    "video_print": "print attack: ordered halftone dither, static paper grain, flattened motion parallax",
+    "video_splice": "face region swapped in from a second identity with alpha blending and seam jitter",
+    "video_recompress": "aggressive JPEG round trip through cv2 plus 8x8 DC quantisation blocking",
+    "audio_replay": "room impulse response, loudspeaker and microphone band limiting, device noise floor",
+    "audio_vocoder": "mel analysis, pseudo-inverse back to linear magnitude, Griffin-Lim phase resynthesis",
+    "audio_conversion": "pitch and formant shift by resampling, then phase vocoder time stretch back",
+    "audio_splice": "segments from two different utterances concatenated with hard joins"
+  },
+  "corpus": {
+    "n_frames": 16,
+    "frame_size": 64,
+    "sample_rate": 16000,
+    "n_samples": 32000,
+    "n_clips": 1600,
+    "n_identities": 80
+  },
+  "features": {
+    "audio_scale": 32767.0,
+    "n_fft": 512,
+    "hop_length": 160,
+    "n_mels": 64,
+    "patch_width": 20,
+    "window": "hann_periodic",
+    "center_pad": "reflect",
+    "log_epsilon": 1e-06,
+    "fbank_shape": [
+      257,
+      64
+    ],
+    "logmel_check_clip": "clip_00003",
+    "logmel_check_shape": [
+      64,
+      201
+    ]
+  },
+  "clip_encoding": "zlib deflate of uint8 frame residuals (T, H, W, 3), left difference along W then temporal difference along T, modulo 256, followed by int16 little endian first differences of the audio, modulo 65536",
+  "models": {
+    "video": {
+      "path": "models/video.onnx",
+      "input": "steps",
+      "output": "logit",
+      "shape": [
+        1,
+        16,
+        3,
+        64,
+        64
+      ]
+    },
+    "audio": {
+      "path": "models/audio.onnx",
+      "input": "steps",
+      "output": "logit",
+      "shape": [
+        1,
+        10,
+        1,
+        64,
+        20
+      ]
+    }
+  },
+  "calibration": {
+    "audio": {
+      "calibrator": {
+        "a": 0.7830078942673567,
+        "b": -1.763191013478651
+      },
+      "operating": {
+        "achieved_precision": 0.9574468085106383,
+        "reached_target": true,
+        "recall": 0.5625,
+        "target_precision": 0.95,
+        "threshold": 0.6028992239760894
+      },
+      "stream": "audio"
+    },
+    "fused": {
+      "operating": {
+        "achieved_precision": 0.9523809523809523,
+        "reached_target": true,
+        "recall": 1.0,
+        "target_precision": 0.95,
+        "threshold": 0.04341514743434677
+      },
+      "weight": 0.05
+    },
+    "video": {
+      "calibrator": {
+        "a": 0.7736952961273441,
+        "b": -0.22837532469170702
+      },
+      "operating": {
+        "achieved_precision": 0.9528301886792453,
+        "reached_target": true,
+        "recall": 0.63125,
+        "target_precision": 0.95,
+        "threshold": 0.017897360853543372
+      },
+      "stream": "video"
+    }
+  },
+  "gallery": {
+    "identity": "id_003",
+    "clips": {
+      "bonafide": "clip_00003",
+      "video_replay": "clip_01523",
+      "video_print": "clip_01043",
+      "video_splice": "clip_00403",
+      "video_recompress": "clip_00243",
+      "audio_replay": "clip_00643",
+      "audio_vocoder": "clip_00163",
+      "audio_conversion": "clip_00563",
+      "audio_splice": "clip_00323"
+    }
+  },
+  "clips": [
+    {
+      "id": "clip_00003",
+      "identity": "id_003",
+      "video_family": "bonafide",
+      "audio_family": "bonafide",
+      "label": 0,
+      "combo": "bonafide",
+      "split": "seen_test",
+      "touches_unseen": false,
+      "roles": [
+        "gallery:bonafide"
+      ]
+    },
+    {
+      "id": "clip_01523",
+      "identity": "id_003",
+      "video_family": "video_replay",
+      "audio_family": "bonafide",
+      "label": 1,
+      "combo": "video_only",
+      "split": "seen_test",
+      "touches_unseen": false,
+      "roles": [
+        "gallery:video_replay"
+      ]
+    },
+    {
+      "id": "clip_01043",
+      "identity": "id_003",
+      "video_family": "video_print",
+      "audio_family": "bonafide",
+      "label": 1,
+      "combo": "video_only",
+      "split": "seen_test",
+      "touches_unseen": false,
+      "roles": [
+        "gallery:video_print"
+      ]
+    },
+    {
+      "id": "clip_00403",
+      "identity": "id_003",
+      "video_family": "video_splice",
+      "audio_family": "bonafide",
+      "label": 1,
+      "combo": "video_only",
+      "split": "unseen_test",
+      "touches_unseen": true,
+      "roles": [
+        "gallery:video_splice"
+      ]
+    },
+    {
+      "id": "clip_00243",
+      "identity": "id_003",
+      "video_family": "video_recompress",
+      "audio_family": "bonafide",
+      "label": 1,
+      "combo": "video_only",
+      "split": "seen_test",
+      "touches_unseen": false,
+      "roles": [
+        "gallery:video_recompress"
+      ]
+    },
+    {
+      "id": "clip_00643",
+      "identity": "id_003",
+      "video_family": "bonafide",
+      "audio_family": "audio_replay",
+      "label": 1,
+      "combo": "audio_only",
+      "split": "seen_test",
+      "touches_unseen": false,
+      "roles": [
+        "gallery:audio_replay"
+      ]
+    },
+    {
+      "id": "clip_00163",
+      "identity": "id_003",
+      "video_family": "video_splice",
+      "audio_family": "audio_vocoder",
+      "label": 1,
+      "combo": "both",
+      "split": "unseen_test",
+      "touches_unseen": true,
+      "roles": [
+        "gallery:audio_vocoder"
+      ]
+    },
+    {
+      "id": "clip_00563",
+      "identity": "id_003",
+      "video_family": "video_splice",
+      "audio_family": "audio_conversion",
+      "label": 1,
+      "combo": "both",
+      "split": "unseen_test",
+      "touches_unseen": true,
+      "roles": [
+        "gallery:audio_conversion"
+      ]
+    },
+    {
+      "id": "clip_00323",
+      "identity": "id_003",
+      "video_family": "bonafide",
+      "audio_family": "audio_splice",
+      "label": 1,
+      "combo": "audio_only",
+      "split": "seen_test",
+      "touches_unseen": false,
+      "roles": [
+        "gallery:audio_splice"
+      ]
+    },
+    {
+      "id": "clip_00081",
+      "identity": "id_001",
+      "video_family": "video_replay",
+      "audio_family": "bonafide",
+      "label": 1,
+      "combo": "video_only",
+      "split": "seen_test",
+      "touches_unseen": false,
+      "roles": []
+    },
+    {
+      "id": "clip_00041",
+      "identity": "id_041",
+      "video_family": "video_print",
+      "audio_family": "bonafide",
+      "label": 1,
+      "combo": "video_only",
+      "split": "seen_test",
+      "touches_unseen": false,
+      "roles": []
+    },
+    {
+      "id": "clip_00001",
+      "identity": "id_001",
+      "video_family": "video_splice",
+      "audio_family": "bonafide",
+      "label": 1,
+      "combo": "video_only",
+      "split": "unseen_test",
+      "touches_unseen": true,
+      "roles": []
+    },
+    {
+      "id": "clip_00361",
+      "identity": "id_041",
+      "video_family": "video_splice",
+      "audio_family": "bonafide",
+      "label": 1,
+      "combo": "video_only",
+      "split": "unseen_test",
+      "touches_unseen": true,
+      "roles": []
+    },
+    {
+      "id": "clip_00065",
+      "identity": "id_065",
+      "video_family": "video_recompress",
+      "audio_family": "bonafide",
+      "label": 1,
+      "combo": "video_only",
+      "split": "seen_test",
+      "touches_unseen": false,
+      "roles": []
+    },
+    {
+      "id": "clip_00031",
+      "identity": "id_031",
+      "video_family": "bonafide",
+      "audio_family": "audio_replay",
+      "label": 1,
+      "combo": "audio_only",
+      "split": "seen_test",
+      "touches_unseen": false,
+      "roles": []
+    },
+    {
+      "id": "clip_00039",
+      "identity": "id_039",
+      "video_family": "bonafide",
+      "audio_family": "audio_vocoder",
+      "label": 1,
+      "combo": "audio_only",
+      "split": "unseen_test",
+      "touches_unseen": true,
+      "roles": []
+    },
+    {
+      "id": "clip_00012",
+      "identity": "id_012",
+      "video_family": "bonafide",
+      "audio_family": "audio_vocoder",
+      "label": 1,
+      "combo": "audio_only",
+      "split": "unseen_test",
+      "touches_unseen": true,
+      "roles": []
+    },
+    {
+      "id": "clip_00201",
+      "identity": "id_041",
+      "video_family": "bonafide",
+      "audio_family": "audio_conversion",
+      "label": 1,
+      "combo": "audio_only",
+      "split": "seen_test",
+      "touches_unseen": false,
+      "roles": []
+    },
+    {
+      "id": "clip_00028",
+      "identity": "id_028",
+      "video_family": "bonafide",
+      "audio_family": "audio_splice",
+      "label": 1,
+      "combo": "audio_only",
+      "split": "seen_test",
+      "touches_unseen": false,
+      "roles": []
+    },
+    {
+      "id": "clip_00161",
+      "identity": "id_001",
+      "video_family": "bonafide",
+      "audio_family": "bonafide",
+      "label": 0,
+      "combo": "bonafide",
+      "split": "seen_test",
+      "touches_unseen": false,
+      "roles": []
+    },
+    {
+      "id": "clip_00119",
+      "identity": "id_039",
+      "video_family": "bonafide",
+      "audio_family": "bonafide",
+      "label": 0,
+      "combo": "bonafide",
+      "split": "seen_test",
+      "touches_unseen": false,
+      "roles": []
+    },
+    {
+      "id": "clip_00064",
+      "identity": "id_064",
+      "video_family": "bonafide",
+      "audio_family": "bonafide",
+      "label": 0,
+      "combo": "bonafide",
+      "split": "unseen_test",
+      "touches_unseen": false,
+      "roles": []
+    },
+    {
+      "id": "clip_00593",
+      "identity": "id_033",
+      "video_family": "video_splice",
+      "audio_family": "audio_vocoder",
+      "label": 1,
+      "combo": "both",
+      "split": "unseen_test",
+      "touches_unseen": true,
+      "roles": []
+    },
+    {
+      "id": "clip_00015",
+      "identity": "id_015",
+      "video_family": "video_print",
+      "audio_family": "audio_conversion",
+      "label": 1,
+      "combo": "both",
+      "split": "seen_test",
+      "touches_unseen": false,
+      "roles": []
+    },
+    {
+      "id": "clip_00036",
+      "identity": "id_036",
+      "video_family": "video_print",
+      "audio_family": "audio_vocoder",
+      "label": 1,
+      "combo": "both",
+      "split": "unseen_test",
+      "touches_unseen": true,
+      "roles": []
+    }
+  ]
+}

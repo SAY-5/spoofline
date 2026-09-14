@@ -88,6 +88,7 @@ test clips from a `make demo` run, and `npm run selfcheck` holds every logit to 
 | --- | --- |
 | [v1.0.0](https://github.com/SAY-5/spoofline/releases/tag/v1.0.0) | baseline: two CNN-LSTM streams, per-stream Platt calibration at a target precision, weighted fusion, leave-one-family-out evaluation |
 | [v2.0.0](https://github.com/SAY-5/spoofline/releases/tag/v2.0.0) | evaluation you can trust: `spoofline sweep` over 3 seeds and all 16 leave-two-families-out splits, mean, std and bootstrap 95% intervals per detector |
+| [v3.0.0](https://github.com/SAY-5/spoofline/releases/tag/v3.0.0) | fusion that earns its place: logistic fusion over both streams plus their disagreement, compared with weighted sum, AND and OR, and per clip attribution of the triggering stream |
 
 `CHANGELOG.md` has the detail for every version.
 
@@ -435,6 +436,105 @@ and every metric from the cache in seconds instead of retraining.
   runs as if they were independent, but runs that share a seed share a corpus and
   identity pools.
 
+## Learned fusion against the weighted sum
+
+v3 adds a second fusion. A logistic regression takes three features per clip, both
+calibrated probabilities and their absolute disagreement `|p_video - p_audio|`, and
+is fitted with a small L2 penalty on the calibration split only. Its operating
+point comes from the same precision constrained search as every other detector:
+the threshold with the most recall among those whose calibration precision
+reaches 0.95. The disagreement feature is there for a reason:
+`max(p_video, p_audio) = (p_video + p_audio) / 2 + |p_video - p_audio| / 2`, so
+with it a linear model can express an OR of the two streams, which is what an
+"attacked in either modality" label calls for. Its coefficient came out positive
+in all 48 sweep runs.
+
+Every fusion decision is also attributed to a stream by silencing one stream at a
+time (setting its probability to 0): `video` or `audio` if that stream alone keeps
+the clip flagged, `either` if each alone would, `joint` if only the two together
+do, and `none` if the clip is not flagged. `spoofline score` prints it as
+`triggered_by`, and the pipeline summary tabulates it against the modality that
+was actually attacked.
+
+### The comparison, over the 48 sweep runs
+
+Same cached logits as the v2 sweep, so the stream numbers are unchanged and every
+row is the mean over 48 runs of the reduced profile (bootstrap 95 percent interval
+of the mean in brackets).
+
+| unseen families | precision | recall | F1 | AUC |
+| --- | --- | --- | --- | --- |
+| video only | 0.934 [0.906, 0.958] | 0.412 | 0.556 | 0.690 |
+| audio only | 0.939 [0.921, 0.958] | 0.268 | 0.403 | 0.684 |
+| AND rule | 0.916 [0.836, 0.977] | 0.107 | 0.186 | n/a |
+| OR rule | 0.934 [0.916, 0.951] | 0.574 | 0.703 | n/a |
+| weighted sum | 0.944 [0.930, 0.957] | 0.566 | 0.699 | 0.794 |
+| logistic | 0.946 [0.930, 0.960] | 0.555 | 0.689 | 0.795 |
+
+| seen families | precision | recall | F1 | AUC |
+| --- | --- | --- | --- | --- |
+| AND rule | 0.998 | 0.220 | 0.356 | n/a |
+| OR rule | 0.980 | 0.834 | 0.899 | n/a |
+| weighted sum | 0.985 | 0.834 | 0.901 | 0.939 |
+| logistic | 0.984 | 0.834 | 0.901 | 0.941 |
+
+**Does the learned fusion narrow the gap to the best single stream on unseen
+precision? Not measurably.** Per run, unseen precision minus the better single
+stream of that run is -0.038 [-0.050, -0.026] for the weighted sum and -0.036
+[-0.050, -0.023] for the logistic fusion. Paired run by run, logistic minus
+weighted is +0.002 [-0.011, +0.017] on unseen precision, -0.011 [-0.025, +0.003]
+on unseen recall and -0.009 [-0.020, +0.001] on unseen F1; the logistic fusion is
+higher on unseen precision in 19 runs, equal in 12 and lower in 17. On seen
+families the two are within 0.002 on every metric. The honest reading is that the
+learned fusion is a wash: it matches the weighted sum, it does not close the
+precision gap, and it gives up about a point of unseen recall. The weighted sum
+stays the primary `decision`; the logistic fusion is reported beside it.
+The AND rule's unseen precision has a standard deviation of 0.248 because in some
+runs it flags nothing, which counts as precision 0.
+
+### The comparison on the single demo run
+
+The v3 demo run (full profile, seed 20250117, `video_splice` and `audio_vocoder`
+held out) reproduces the v1 numbers for both streams and the weighted sum exactly
+and adds the logistic rows. The logistic fusion fitted `p_video +3.252`,
+`p_audio +2.474`, `disagreement +3.016`, intercept `-2.650` and a threshold of
+0.0869 on the calibration split alone.
+
+| unseen families | P | R | F1 | EER | AUC |
+| --- | --- | --- | --- | --- | --- |
+| video only | 1.000 | 0.475 | 0.644 | 0.387 | 0.705 |
+| audio only | 0.864 | 0.237 | 0.373 | 0.279 | 0.806 |
+| AND rule | 1.000 | 0.113 | 0.202 | n/a | n/a |
+| OR rule | 0.941 | 0.600 | 0.733 | n/a | n/a |
+| weighted sum | 0.941 | 0.600 | 0.733 | 0.188 | 0.869 |
+| logistic | 0.948 | 0.688 | 0.797 | 0.125 | 0.883 |
+
+| seen families | P | R | F1 | EER | AUC |
+| --- | --- | --- | --- | --- | --- |
+| AND rule | 1.000 | 0.260 | 0.412 | n/a | n/a |
+| OR rule | 0.974 | 0.987 | 0.981 | n/a | n/a |
+| weighted sum | 0.956 | 0.994 | 0.975 | 0.140 | 0.947 |
+| logistic | 0.963 | 1.000 | 0.981 | 0.023 | 0.998 |
+
+On this one run the logistic fusion looks clearly better: unseen precision 0.948
+against 0.941, the gap to video alone shrinks from -0.059 to -0.052, and it
+catches 55 of 80 unseen attacks instead of 48. The sweep is why the README does not
+claim that. Across 48 runs the same paired comparison averages +0.002 on unseen
+precision and -0.011 on unseen recall, so this run is a favourable draw, which is
+exactly the kind of single run difference the v2 sweep was built to check.
+
+Attribution on the same run says where decisions come from:
+
+* Every audio only attack the fusion flags is attributed to audio (56 of 56 on the
+  seen split, 12 of 12 flagged on the unseen split), and 51 of the 56 seen video
+  only attacks to video, with 3 more that either stream alone would flag.
+* The bona fide false alarms are audio triggered: all 3 on the unseen split for
+  both fusions, and 6 of the 7 on the seen split for the weighted sum (the seventh
+  needs both streams together).
+* The misses sit on the held out families: the weighted sum leaves 18 of the 22
+  unseen video only clips (all `video_splice`) and 11 of the 23 unseen audio only
+  clips (all `audio_vocoder`) unflagged.
+
 ## Plugging in a real corpus
 
 `spoofline/data/sources.py` defines the `ClipSource` protocol:
@@ -503,7 +603,7 @@ spoofline/
   families.py        the eight attack families
   metrics.py         precision, recall, F1, AUC, EER, per-family breakdown
   calibrate.py       Platt scaling and threshold selection at a target precision
-  fusion.py          weighted score fusion plus AND and OR rules
+  fusion.py          weighted and logistic fusion, AND and OR rules, per clip attribution
   train.py           per-stream training and scoring
   pipeline.py        the end to end run and the single clip scorer
   sweep.py           repeated seed, leave two families out sweep with bootstrap summaries

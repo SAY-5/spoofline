@@ -89,6 +89,7 @@ test clips from a `make demo` run, and `npm run selfcheck` holds every logit to 
 | [v1.0.0](https://github.com/SAY-5/spoofline/releases/tag/v1.0.0) | baseline: two CNN-LSTM streams, per-stream Platt calibration at a target precision, weighted fusion, leave-one-family-out evaluation |
 | [v2.0.0](https://github.com/SAY-5/spoofline/releases/tag/v2.0.0) | evaluation you can trust: `spoofline sweep` over 3 seeds and all 16 leave-two-families-out splits, mean, std and bootstrap 95% intervals per detector |
 | [v3.0.0](https://github.com/SAY-5/spoofline/releases/tag/v3.0.0) | fusion that earns its place: logistic fusion over both streams plus their disagreement, compared with weighted sum, AND and OR, and per clip attribution of the triggering stream |
+| [v4.0.0](https://github.com/SAY-5/spoofline/releases/tag/v4.0.0) | robustness to benign degradation: false alarm rate per perturbation and severity for every detector, and an abstain option with coverage against precision |
 
 `CHANGELOG.md` has the detail for every version.
 
@@ -535,6 +536,149 @@ Attribution on the same run says where decisions come from:
   unseen video only clips (all `video_splice`) and 11 of the 23 unseen audio only
   clips (all `audio_vocoder`) unflagged.
 
+## Robustness to benign degradation
+
+A deployed detector sees genuine clips that have been compressed, filmed on a
+noisy sensor, relit, resampled, recorded in a room or cut by a network glitch. If
+any of that trips the detector, its precision in the field is lower than the
+calibration split promised. `spoofline robustness` takes the bona fide clips of the
+two test splits of a finished run, degrades each one, keeps its label, and counts
+how often each detector now calls it an attack. Every flag in this table is a
+false alarm.
+
+```bash
+uv run spoofline robustness            # uses runs/full and data/full from make demo
+```
+
+| perturbation | stream | severities, mildest first |
+| --- | --- | --- |
+| `jpeg` | video | quality 90, 70, 50, 30, 15, one OpenCV encode and decode per frame |
+| `video_noise` | video | gaussian pixel noise, sigma 2, 5, 10, 20 |
+| `brightness_contrast` | video | contrast falls by s and brightness rises by 60 s over the clip, s = 0.1, 0.2, 0.35, 0.5 |
+| `video_dropout` | video | 1, 2, 4 frames replaced by the frame before, as a stalled capture does |
+| `audio_noise` | audio | gaussian noise at SNR 40, 30, 20, 10 dB |
+| `resample` | audio | down to 12000, 8000, 6000, 4000 Hz and back to 16000 Hz |
+| `reverb` | audio | direct path plus a decaying noise tail with RT60 0.1, 0.2, 0.35 s, RMS matched |
+| `audio_dropout` | audio | 1, 3, 6 separate 30 ms stretches set to zero |
+
+The severity ladders and the abstain margins were fixed before the run and not
+adjusted after seeing the table. The perturbed stream is rescored; the other
+stream keeps its clean score.
+
+### False alarm rate on degraded bona fide clips
+
+Measured on the v3 demo run (full profile, seed 20250117) over its 86 bona fide
+test clips, 43 from each test split, so one clip moves a rate by 0.012. This is a
+single run; the table has no variance estimate.
+
+| perturbation | stream | severity | video | audio | weighted sum | logistic |
+| --- | --- | --- | --- | --- | --- | --- |
+| clean | none | none | 0.012 | 0.070 | 0.116 | 0.105 |
+| jpeg | video | quality 90 | 0.023 | 0.070 | 0.116 | 0.116 |
+| jpeg | video | quality 70 | 0.256 | 0.070 | 0.116 | 0.163 |
+| jpeg | video | quality 50 | 0.477 | 0.070 | 0.116 | 0.349 |
+| jpeg | video | quality 30 | 0.895 | 0.070 | 0.174 | 0.698 |
+| jpeg | video | quality 15 | 1.000 | 0.070 | 0.884 | 1.000 |
+| video_noise | video | sigma 2 | 0.012 | 0.070 | 0.116 | 0.105 |
+| video_noise | video | sigma 5 | 0.000 | 0.070 | 0.116 | 0.105 |
+| video_noise | video | sigma 10 | 0.000 | 0.070 | 0.116 | 0.105 |
+| video_noise | video | sigma 20 | 0.000 | 0.070 | 0.116 | 0.105 |
+| brightness_contrast | video | drift 0.1 | 0.093 | 0.070 | 0.116 | 0.128 |
+| brightness_contrast | video | drift 0.2 | 0.372 | 0.070 | 0.140 | 0.372 |
+| brightness_contrast | video | drift 0.35 | 0.942 | 0.070 | 0.244 | 0.616 |
+| brightness_contrast | video | drift 0.5 | 1.000 | 0.070 | 0.302 | 0.895 |
+| video_dropout | video | frames 1 | 0.012 | 0.070 | 0.116 | 0.105 |
+| video_dropout | video | frames 2 | 0.012 | 0.070 | 0.116 | 0.105 |
+| video_dropout | video | frames 4 | 0.012 | 0.070 | 0.116 | 0.105 |
+| audio_noise | audio | snr_db 40 | 0.012 | 0.419 | 0.849 | 0.837 |
+| audio_noise | audio | snr_db 30 | 0.012 | 1.000 | 1.000 | 1.000 |
+| audio_noise | audio | snr_db 20 | 0.012 | 1.000 | 1.000 | 1.000 |
+| audio_noise | audio | snr_db 10 | 0.012 | 1.000 | 1.000 | 1.000 |
+| resample | audio | hz 12000 | 0.012 | 0.953 | 1.000 | 1.000 |
+| resample | audio | hz 8000 | 0.012 | 0.977 | 1.000 | 1.000 |
+| resample | audio | hz 6000 | 0.012 | 1.000 | 1.000 | 1.000 |
+| resample | audio | hz 4000 | 0.012 | 1.000 | 1.000 | 1.000 |
+| reverb | audio | rt60_s 0.1 | 0.012 | 0.326 | 0.709 | 0.686 |
+| reverb | audio | rt60_s 0.2 | 0.012 | 0.977 | 1.000 | 1.000 |
+| reverb | audio | rt60_s 0.35 | 0.012 | 1.000 | 1.000 | 1.000 |
+| audio_dropout | audio | gaps 1 | 0.012 | 0.058 | 0.151 | 0.140 |
+| audio_dropout | audio | gaps 3 | 0.012 | 0.093 | 0.291 | 0.291 |
+| audio_dropout | audio | gaps 6 | 0.012 | 0.233 | 0.581 | 0.558 |
+
+### What the table says
+
+* **Clean capture is the only condition the calibration covers.** With no
+  degradation the false alarm rate is 0.012 for video, 0.070 for audio, 0.116 for
+  the weighted sum and 0.105 for the logistic fusion.
+* **Benign audio channel changes break the audio stream, and fusion makes it
+  worse.** Gaussian noise at 40 dB SNR already flags 0.419 of genuine clips on the
+  audio stream and 0.849 on the weighted sum; at 30 dB and below every clip is
+  flagged. A round trip through 12 kHz flags 0.953 on audio and every clip on both
+  fusions, and a small room (RT60 0.1 s) flags 0.326 on audio and 0.709 on the
+  weighted sum. The likely reason is that the training data has attacks that are
+  channel effects (`audio_replay` is a room response, band limiting and a noise
+  floor) and no benign channel variation, so the stream learned that any channel
+  change means an attack. The fusions sit above the audio stream because their
+  operating points are low on the audio axis: the weighted sum puts 0.95 on audio
+  with a threshold of 0.0434, so an audio probability near 0.046 flags a clip,
+  while the audio stream's own threshold is 0.6029.
+* **Compression and lighting trip the video stream, and the weighted sum mostly
+  shields against them.** JPEG quality 70 flags 0.256 of clips on video and quality
+  30 flags 0.895, but the weighted sum stays at 0.116 and 0.174 because it puts only
+  0.05 on video; only quality 15 gets through (0.884). Brightness and contrast drift
+  of 0.35 flags 0.942 on video and 0.244 on the weighted sum. The logistic fusion
+  weights video more and follows the video stream further (0.698 at quality 30,
+  0.616 at drift 0.35). Heavy JPEG is also close to a trained attack family,
+  `video_recompress`.
+* **Pixel noise and frame dropout do nothing.** Video noise up to sigma 20 and up
+  to 4 frozen frames leave every rate at or below its clean value.
+* **What this does to the headline claim.** The fused precision that holds on
+  unseen attack families holds for clean capture. A modest benign audio change
+  makes the fused detector flag most genuine clips, at least for the synthetic
+  degradations measured here. A deployment would need benign channel augmentation in
+  training and recalibration on the target channel; this repo has neither.
+
+### Abstaining when the streams disagree
+
+A fusion can abstain on a clip when `|p_video - p_audio|` exceeds a margin. The
+margin ladder 1.0 (never abstain), 0.9, 0.75, 0.5 and 0.25 was fixed before the run.
+Coverage is the share of clips kept; precision and recall are measured on the kept
+clips only.
+
+| split | fusion | margin | coverage | precision | recall | attacks abstained | bona fide abstained |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| seen_test | weighted sum | 1.00 | 1.000 | 0.956 | 0.994 | 0 | 0 |
+| seen_test | weighted sum | 0.90 | 0.487 | 0.881 | 0.981 | 101 | 0 |
+| seen_test | weighted sum | 0.75 | 0.452 | 0.885 | 0.979 | 107 | 1 |
+| seen_test | weighted sum | 0.50 | 0.416 | 0.913 | 1.000 | 112 | 3 |
+| seen_test | weighted sum | 0.25 | 0.391 | 0.927 | 1.000 | 116 | 4 |
+| seen_test | logistic | 1.00 | 1.000 | 0.963 | 1.000 | 0 | 0 |
+| seen_test | logistic | 0.90 | 0.487 | 0.898 | 1.000 | 101 | 0 |
+| seen_test | logistic | 0.75 | 0.452 | 0.904 | 1.000 | 107 | 1 |
+| seen_test | logistic | 0.50 | 0.416 | 0.933 | 1.000 | 112 | 3 |
+| seen_test | logistic | 0.25 | 0.391 | 0.950 | 1.000 | 116 | 4 |
+| unseen_test | weighted sum | 1.00 | 1.000 | 0.941 | 0.600 | 0 | 0 |
+| unseen_test | weighted sum | 0.90 | 0.821 | 1.000 | 0.475 | 19 | 3 |
+| unseen_test | weighted sum | 0.75 | 0.772 | 1.000 | 0.418 | 25 | 3 |
+| unseen_test | weighted sum | 0.50 | 0.748 | 1.000 | 0.385 | 28 | 3 |
+| unseen_test | weighted sum | 0.25 | 0.691 | 1.000 | 0.333 | 35 | 3 |
+| unseen_test | logistic | 1.00 | 1.000 | 0.948 | 0.688 | 0 | 0 |
+| unseen_test | logistic | 0.90 | 0.821 | 1.000 | 0.590 | 19 | 3 |
+| unseen_test | logistic | 0.75 | 0.772 | 1.000 | 0.545 | 25 | 3 |
+| unseen_test | logistic | 0.50 | 0.748 | 1.000 | 0.519 | 28 | 3 |
+| unseen_test | logistic | 0.25 | 0.691 | 1.000 | 0.444 | 35 | 3 |
+
+Abstention is not a general precision fix here, because an attack on one modality
+is exactly a clip where the two streams disagree. On the unseen split the weighted
+sum at margin 0.9 keeps 0.821 of clips at precision 1.000: the 3 abstained bona
+fide clips are its 3 audio triggered false alarms. The price is 19 of the 80
+attacks abstained on and recall on the kept clips falling from 0.600 to 0.475. On
+the seen split the same margin keeps 0.487 of clips, abstains on 101 attacks and on
+no bona fide clip, and precision on what is kept falls from 0.956 to 0.881. Whether
+abstention helps depends on whether the false alarms or the true detections are the
+ones with disagreeing streams, and that differs between the two splits of the same
+run.
+
 ## Plugging in a real corpus
 
 `spoofline/data/sources.py` defines the `ClipSource` protocol:
@@ -588,6 +732,9 @@ generated one. `tests/test_sources.py` exercises the adapter on a written out cl
   trained on its own modality label, so its clip level recall is capped near the
   fraction of attacks that touch its modality. That is the premise of the
   experiment, not a defect, but it is why single stream recall looks low.
+* **Benign audio degradation breaks the detector.** See the robustness section:
+  40 dB SNR noise or a 12 kHz resample makes the fused detector flag most genuine
+  clips. Nothing in training covers benign channel variation.
 * **No augmentation, no speaker or channel robustness work.** An earlier version of
   this repo used 40 identities and the audio stream memorised them: modality AUC
   1.00 on the calibration identities and 0.74 on the test identities. Widening the
@@ -607,6 +754,9 @@ spoofline/
   train.py           per-stream training and scoring
   pipeline.py        the end to end run and the single clip scorer
   sweep.py           repeated seed, leave two families out sweep with bootstrap summaries
+  scoring.py         run scorer: checkpoints, calibration and fusions loaded once
+  perturb.py         benign degradations of bona fide clips
+  robustness.py      false alarms under degradation and the abstain rule
   report.py          the summary block
   cli.py             click commands
   data/

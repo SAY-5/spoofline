@@ -74,6 +74,14 @@ uv run spoofline eval
 uv run spoofline score data/full/clips/clip_00000.npz
 ```
 
+### Browser demo
+
+`web/` is a static page that runs both trained detectors in the browser: clip features are computed in
+TypeScript, the two CNN-LSTMs run as ONNX graphs under onnxruntime-web, and the exported Platt maps,
+thresholds and fusion rule decide each clip. `web/scripts/export.py` writes the models and a small set of
+test clips from a `make demo` run, and `npm run selfcheck` holds every logit to within 1e-4 of PyTorch.
+`web/README.md` names the commit the weights were trained from and how to rebuild the page.
+
 ## Releases
 
 | version | feature |

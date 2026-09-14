@@ -22,6 +22,9 @@ def test_help_lists_every_command():
         "pipeline",
         "sweep",
         "robustness",
+        "export",
+        "model-card",
+        "bench",
     ):
         assert command in result.output
 

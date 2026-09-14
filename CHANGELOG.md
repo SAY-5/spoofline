@@ -3,6 +3,29 @@
 All notable changes to spoofline. Versions follow semantic versioning and each
 one is an annotated git tag with a matching GitHub release.
 
+## 3.0.0
+
+Fusion that earns its place, measured.
+
+* Logistic fusion over both calibrated probabilities and their absolute
+  disagreement, fitted by a penalised Newton solve on the calibration split only,
+  with its operating point chosen by the precision constrained threshold search
+  at the target precision.
+* Per clip attribution of every fusion decision to `video`, `audio`, `either`,
+  `joint` or `none` by silencing one stream at a time, printed by `spoofline score`
+  as `triggered_by` and tabulated against the attacked modality in the summary.
+* The pipeline summary and the sweep compare the weighted sum, the logistic fusion
+  and the AND and OR rules on seen and unseen families, with the gap of each fusion
+  to the best single stream.
+* Measured over the 48 sweep runs: logistic unseen precision 0.946 against 0.944
+  for the weighted sum; the gap to the best single stream is -0.036 against
+  -0.038, a paired difference of +0.002 (95 percent interval -0.011 to +0.017).
+  It does not measurably narrow the gap, so the weighted sum stays primary.
+* 7 new tests: fitting determinism and row order independence, the precision
+  search meeting its target on the calibration split with maximal recall, the
+  disagreement weight sign, dict round trip, attribution on constructed weighted
+  and logistic cases, and attribution covering every test clip in a pipeline run.
+
 ## 2.0.0
 
 Evaluation you can trust.

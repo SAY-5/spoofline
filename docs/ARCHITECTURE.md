@@ -185,6 +185,22 @@ stream thresholds:
 * **OR** flags a clip if either stream flags it. High recall, and the natural
   baseline given that a clip counts as an attack if either modality was attacked.
 
+## Robustness and abstention
+
+`spoofline robustness` loads a finished run through `RunScorer` (both checkpoints,
+both Platt maps, both fusions) and takes every bona fide clip of the two test
+splits. `perturb_clip` refuses any clip whose label is not 0, applies one
+perturbation to one stream and returns a clip with the same record, so every flag
+it causes is a false alarm. Only the perturbed stream is rescored; the other keeps
+its clean logit. Each perturbation draws its randomness from a generator derived
+from the run seed, the perturbation name and the clip id but not the severity, so
+the severity ladder varies only the amount: the same dropout positions are taken
+in order, the same noise field is scaled.
+
+The abstain rule is a mask on the calibrated probabilities, `|p_video - p_audio| >
+margin`. For each margin the report keeps the clips outside the mask and measures
+coverage, and precision and recall of the fusion decision on the kept clips.
+
 ## Metrics
 
 Precision, recall and F1 at the calibrated threshold; EER and AUC over the whole

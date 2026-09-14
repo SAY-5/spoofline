@@ -3,6 +3,27 @@
 All notable changes to spoofline. Versions follow semantic versioning and each
 one is an annotated git tag with a matching GitHub release.
 
+## 5.0.0
+
+Deployment path.
+
+* `spoofline export --onnx` writes both streams as ONNX with a dynamic batch and
+  step axis, with the normaliser folded into the graph, and refuses to finish if
+  any clip's ONNX logit differs from the PyTorch logit by more than 1e-4. Measured
+  on the demo run: video 3.81e-06, audio 3.81e-06 over 32 clips.
+* `spoofline model-card` renders a model card from the last evaluation run: model
+  details, data note, splits, thresholds with their score formulas, seen and unseen
+  metrics for every detector, robustness at the heaviest severities, limitations.
+  `docs/MODEL_CARD.md` is the card of the demo run.
+* `spoofline score` takes any number of clips and `--json` emits one document with
+  `schema_version`, `run_dir` and a `clips` list whose entries carry every logit,
+  probability, flag, both decisions and `triggered_by`.
+* `spoofline bench` reports per clip p50 and p95 latency for each stream and end to
+  end on PyTorch and ONNX Runtime. Measured on the demo run: PyTorch p50 10.07 ms video, 2.54 ms audio, 17.04 ms end to end; ONNX
+  Runtime 4.50 ms, 2.05 ms and 8.44 ms, one thread on a busy 10 core CPU.
+* 5 new tests: ONNX parity within 1e-4 for both streams, ONNX on other batch and
+  step sizes, model card sections and numbers, batch JSON schema, latency rows.
+
 ## 4.0.0
 
 Robustness to benign degradation.

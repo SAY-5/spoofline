@@ -88,21 +88,33 @@ def test_summarise_matches_hand_computed_values_and_ignores_nan():
     assert summary.ci_low <= summary.mean <= summary.ci_high
 
 
-def _fake_run(video_p, audio_p, fused_p, seen_fused_p):
+def _fake_run(video_p, audio_p, fused_p, seen_fused_p, logistic_p=0.9):
     def block(precision):
         return {"precision": precision, "recall": 0.5, "f1": 0.5, "eer": 0.2, "auc": 0.9}
 
+    def split(video, audio, fused, logistic):
+        return {
+            "video": block(video),
+            "audio": block(audio),
+            "fused": block(fused),
+            "logistic": block(logistic),
+        }
+
     metrics = {
-        "seen_test": {"video": block(0.9), "audio": block(0.9), "fused": block(seen_fused_p)},
-        "unseen_test": {"video": block(video_p), "audio": block(audio_p), "fused": block(fused_p)},
+        "seen_test": split(0.9, 0.9, seen_fused_p, 0.95),
+        "unseen_test": split(video_p, audio_p, fused_p, logistic_p),
     }
-    return {"metrics": metrics, "derived": derived_metrics(metrics)}
+    rule = {"precision": 0.6, "recall": 0.4, "f1": 0.48}
+    rules = {name: {"and": rule, "or": rule} for name in ("seen_test", "unseen_test")}
+    return {"metrics": metrics, "rules": rules, "derived": derived_metrics(metrics)}
 
 
 def test_derived_metrics_compare_fused_precision_with_the_best_stream_and_seen_split():
-    run = _fake_run(video_p=1.0, audio_p=0.8, fused_p=0.94, seen_fused_p=0.97)
+    run = _fake_run(video_p=1.0, audio_p=0.8, fused_p=0.94, seen_fused_p=0.97, logistic_p=0.98)
     assert run["derived"]["unseen_precision_gap"] == pytest.approx(-0.06)
     assert run["derived"]["seen_to_unseen_precision_drop"] == pytest.approx(0.03)
+    assert run["derived"]["logistic_unseen_precision_gap"] == pytest.approx(-0.02)
+    assert run["derived"]["logistic_seen_to_unseen_precision_drop"] == pytest.approx(-0.03)
 
 
 def test_aggregate_arithmetic_over_runs():
@@ -121,6 +133,7 @@ def test_aggregate_arithmetic_over_runs():
     assert gap["mean"] == pytest.approx(np.mean([-0.10, -0.10, -0.05]))
     video_recall = table["metrics"]["seen_test"]["video"]["recall"]
     assert video_recall["mean"] == pytest.approx(0.5) and video_recall["std"] == 0.0
+    assert table["rules"]["unseen_test"]["or"]["f1"]["mean"] == pytest.approx(0.48)
 
 
 def test_sweep_runs_every_pair_on_the_tiny_profile_and_reuses_cached_scores(tmp_path):

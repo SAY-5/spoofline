@@ -81,4 +81,4 @@ def test_train_and_calibrate_commands_produce_checkpoints(tmp_path):
     result = runner.invoke(main, ["calibrate", *common])
     assert result.exit_code == 0, result.output
     payload = json.loads((run_dir / "calibration.json").read_text())
-    assert set(payload) == {"video", "audio", "fused"}
+    assert set(payload) == {"video", "audio", "fused", "logistic"}

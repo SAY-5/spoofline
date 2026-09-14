@@ -74,6 +74,14 @@ uv run spoofline eval
 uv run spoofline score data/full/clips/clip_00000.npz
 ```
 
+## Releases
+
+| version | feature |
+| --- | --- |
+| [v1.0.0](https://github.com/SAY-5/spoofline/releases/tag/v1.0.0) | baseline: two CNN-LSTM streams, per-stream Platt calibration at a target precision, weighted fusion, leave-one-family-out evaluation |
+
+`CHANGELOG.md` has the detail for every version.
+
 ## Measured demo run
 
 Output of one `make demo` on a 10 core Apple silicon CPU, pasted verbatim:

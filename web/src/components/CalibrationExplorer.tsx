@@ -145,10 +145,15 @@ function PrChart({ title, curve, target, point, onTarget }: PrChartProps) {
           />
           <path className="series series-precision" d={line(curve.precision)} />
           <path className="series series-recall" d={line(curve.recall)} />
-          <text className="series-label" x={frame.width - frame.right - 4} y={y(curve.precision[curve.precision.length - 1] ?? 1) + 14} textAnchor="end">
+          <text className="series-label" x={frame.left + 6} y={y(curve.precision[0] ?? 0) + 18}>
             precision
           </text>
-          <text className="series-label series-label-muted" x={frame.left + 6} y={y(curve.recall[0] ?? 1) + 14}>
+          <text
+            className="series-label series-label-muted"
+            x={frame.width - frame.right - 6}
+            y={y(curve.recall[curve.recall.length - 1] ?? 0) - 10}
+            textAnchor="end"
+          >
             recall
           </text>
           <line className="operating-line" x1={tx} x2={tx} y1={frame.top} y2={frame.height - frame.bottom} />

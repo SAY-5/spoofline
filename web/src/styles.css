@@ -1216,6 +1216,12 @@ input[type="range"] {
   }
 }
 @media (max-width: 760px) {
+  .masthead {
+    position: static;
+  }
+  .masthead-inner {
+    gap: 6px 18px;
+  }
   .hero-grid,
   .calib-grid,
   .note-grid {

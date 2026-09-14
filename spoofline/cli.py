@@ -9,10 +9,13 @@ from pathlib import Path
 import click
 import numpy as np
 
+from .bench import run_benchmark
 from .config import PROFILE_NAMES, REPO_ROOT, SpooflineConfig
 from .config import profile as load_profile
 from .data.dataset import load_corpus, make_splits, save_splits
 from .data.generate import combo_counts, family_counts, generate_corpus
+from .export import export_run
+from .model_card import write_model_card
 from .models.cnn_lstm import load_checkpoint, save_checkpoint
 from .pipeline import (
     calibrate_all,
@@ -20,10 +23,10 @@ from .pipeline import (
     load_calibration,
     modality_labels,
     run_pipeline,
-    score_single_clip,
 )
-from .report import render_evaluation
+from .report import render_evaluation, render_latency
 from .robustness import run_robustness
+from .scoring import score_clip_paths
 from .seeding import seed_everything
 from .sweep import run_sweep
 from .train import score_clips, train_stream
@@ -187,18 +190,25 @@ def eval_command(
 
 
 @main.command()
-@click.argument("clip", type=click.Path(exists=True))
+@click.argument("clips", nargs=-1, required=True, type=click.Path(exists=True, dir_okay=False))
 @PROFILE_OPTION
 @click.option("--run-dir", type=click.Path(), default=None)
-def score(clip: str, profile: str, run_dir: str | None) -> None:
-    """Score a single clip npz with a finished run."""
+@click.option("--json", "as_json", is_flag=True, help="Emit one JSON document for all clips.")
+def score(clips: tuple[str, ...], profile: str, run_dir: str | None, as_json: bool) -> None:
+    """Score one or more clip npz files with a finished run."""
     config = _config(profile, None, None, run_dir)
-    result = score_single_clip(
-        Path(config.run_dir), Path(clip), sample_rate=config.corpus.sample_rate
-    )
-    for key, value in result.items():
-        formatted = f"{value:.4f}" if isinstance(value, float) else value
-        click.echo(f"{key:<22}{formatted}")
+    paths = [Path(clip) for clip in clips]
+    entries = score_clip_paths(Path(config.run_dir), paths, config.corpus.sample_rate)
+    if as_json:
+        payload = {"schema_version": 1, "run_dir": str(config.run_dir), "clips": entries}
+        click.echo(json.dumps(payload, indent=2))
+        return
+    for index, entry in enumerate(entries):
+        if index:
+            click.echo("")
+        for key, value in entry.items():
+            formatted = f"{value:.4f}" if isinstance(value, float) else value
+            click.echo(f"{key:<22}{formatted}")
 
 
 @main.command()
@@ -267,6 +277,79 @@ def robustness(profile: str, corpus_dir: str | None, run_dir: str | None) -> Non
     click.echo("")
     click.echo(result.summary)
     click.echo(f"wrote {result.run_dir / 'robustness.json'}")
+
+
+def _corpus_clips(config: SpooflineConfig, limit: int) -> list[Path]:
+    paths = sorted((Path(config.corpus_dir) / "clips").glob("*.npz"))[:limit]
+    if not paths:
+        raise click.UsageError(f"no clip npz files under {config.corpus_dir}/clips")
+    return paths
+
+
+@main.command("export")
+@PROFILE_OPTION
+@click.option("--onnx", "to_onnx", is_flag=True, help="Export both streams to ONNX.")
+@click.option("--corpus-dir", type=click.Path(), default=None)
+@click.option("--run-dir", type=click.Path(), default=None)
+@click.option("--out-dir", type=click.Path(), default=None, help="Defaults to <run-dir>/onnx.")
+@click.option("--parity-clips", type=click.IntRange(min=1), default=32, show_default=True)
+def export_command(
+    profile: str,
+    to_onnx: bool,
+    corpus_dir: str | None,
+    run_dir: str | None,
+    out_dir: str | None,
+    parity_clips: int,
+) -> None:
+    """Export both streams of a finished run and check parity with PyTorch."""
+    if not to_onnx:
+        raise click.UsageError("choose an export format; --onnx is the one supported")
+    config = _config(profile, None, corpus_dir, run_dir)
+    out = Path(out_dir) if out_dir else Path(config.run_dir) / "onnx"
+    paths = _corpus_clips(config, parity_clips)
+    report = export_run(Path(config.run_dir), out, paths, config.corpus.sample_rate)
+    for stream, path in report["files"].items():
+        difference = report["parity"][stream]["max_abs_diff"]
+        click.echo(f"{stream}: {path}  max |onnx - torch| {difference:.2e} over {len(paths)} clips")
+    click.echo(f"wrote {out / 'export.json'}")
+
+
+@main.command("model-card")
+@PROFILE_OPTION
+@click.option("--run-dir", type=click.Path(), default=None)
+@click.option("--out", type=click.Path(), default=None, help="Defaults to <run-dir>/MODEL_CARD.md.")
+def model_card_command(profile: str, run_dir: str | None, out: str | None) -> None:
+    """Render a model card from the last evaluation run."""
+    config = _config(profile, None, None, run_dir)
+    path = write_model_card(Path(config.run_dir), Path(out) if out else None)
+    click.echo(f"wrote {path}")
+
+
+@main.command()
+@PROFILE_OPTION
+@click.option("--corpus-dir", type=click.Path(), default=None)
+@click.option("--run-dir", type=click.Path(), default=None)
+@click.option("--onnx-dir", type=click.Path(), default=None, help="Defaults to <run-dir>/onnx.")
+@click.option("--clips", "n_clips", type=click.IntRange(min=1), default=200, show_default=True)
+@click.option("--threads", type=click.IntRange(min=1), default=1, show_default=True)
+def bench(
+    profile: str,
+    corpus_dir: str | None,
+    run_dir: str | None,
+    onnx_dir: str | None,
+    n_clips: int,
+    threads: int,
+) -> None:
+    """Per clip CPU latency, p50 and p95, per stream and end to end, for PyTorch and ONNX."""
+    config = _config(profile, None, corpus_dir, run_dir)
+    run = Path(config.run_dir)
+    onnx = Path(onnx_dir) if onnx_dir else run / "onnx"
+    if not (onnx / "video.onnx").exists():
+        raise click.UsageError(f"no exported streams in {onnx}; run spoofline export --onnx first")
+    paths = _corpus_clips(config, n_clips)
+    result = run_benchmark(run, paths, onnx, threads, sample_rate=config.corpus.sample_rate)
+    (run / "latency.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
+    click.echo(render_latency(result))
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -152,7 +152,10 @@ def test_the_abstain_table_matches_the_committed_robustness_run():
 
 def test_the_robustness_block_headings_come_from_the_committed_run():
     rendered = render_robustness(_artifact(DEMO_RUN, "robustness.json"))
-    assert f"bona fide test clips  {sum(_artifact(DEMO_RUN, 'robustness.json')['bonafide_clips'].values())}" in rendered
+    assert (
+        f"bona fide test clips  {sum(_artifact(DEMO_RUN, 'robustness.json')['bonafide_clips'].values())}"
+        in rendered
+    )
     assert "false alarm rate" in rendered
 
 
@@ -170,5 +173,7 @@ def test_the_export_parity_block_matches_the_committed_export():
 
 
 def test_the_full_profile_sweep_block_is_the_rendered_sweep():
-    pasted = _fence_containing("spoofline sweep   profile=full").rstrip("\n")
+    block = _fence_containing("spoofline sweep   profile=full")
+    rule = "=" * 78
+    pasted = block[block.index(rule) :].rstrip("\n")
     assert pasted == render_sweep(_artifact(SWEEP_RUN, "sweep.json")).rstrip("\n")

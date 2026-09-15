@@ -28,7 +28,10 @@ committed artifact.
   branch: every metric reproduced, and the latency table was re-measured on a
   quieter machine.
 * `spoofline sweep --pairs default` restricts the sweep to the profile's held out
-  pair, which is how the full profile variance table was produced.
+  pair. Three seeds of it at the full profile put the headline in context: fused
+  unseen precision 0.972 (std 0.030, bootstrap interval 0.941 to 1.000), so the
+  demo run's 0.941 sits at the bottom of the interval, and video alone holds
+  precision 1.000 in all three runs.
 * `spoofline robustness` takes its seed, held out families and split membership
   from the run's `results.json` and `splits.json` instead of recomputing them from
   the profile, so a run trained with another seed can be post-processed.

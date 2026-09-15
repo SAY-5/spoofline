@@ -401,6 +401,115 @@ robustness tables, the latency table and the full profile sweep below,
 `uv run spoofline sweep` writes `runs/sweep/reduced/sweep.json`, which is what a
 reader would have to compare it against.
 
+## Variance at the full profile, one held out pair
+
+The sweep above trades profile size for coverage. The other direction is the full
+demo profile over three seeds of the single held out pair the demo quotes, which is
+what `--pairs default` runs. Each run generates the corpus for its own seed and
+trains both streams at full size; the three runs took 1323 s of wall clock on the
+same 10 core CPU, with other work on the machine for part of that time. The cache
+keys are the ones the 16 pair sweep uses, so a later full sweep reuses these runs.
+
+```bash
+uv run spoofline sweep --profile full --pairs default --seeds 3 --workers 1
+```
+
+```
+$ uv run spoofline sweep --profile full --pairs default --seeds 3 --workers 1
+==============================================================================
+spoofline sweep   profile=full   seeds=3   held out pairs=1   runs=3
+==============================================================================
+corpus            1600 clips, 80 identities, 16 frames of 64x64, 2.0 s at 16000 Hz
+training          video 10 epochs, audio 8 epochs, batch 32, 8 threads per run
+seeds             20250117, 20250118, 20250119
+target precision  0.95 on the calib split of every run
+
+mean, sample std and bootstrap 95% interval of the mean over runs
+  split       detector  metric        mean    std   ci low  ci high
+  seen_test   video     precision    0.997  0.006    0.990    1.000
+  seen_test   video     recall       0.635  0.037    0.595    0.667
+  seen_test   video     f1           0.775  0.027    0.746    0.800
+  seen_test   video     eer          0.283  0.033    0.256    0.320
+  seen_test   video     auc          0.810  0.034    0.783    0.848
+  seen_test   audio     precision    0.980  0.011    0.969    0.990
+  seen_test   audio     recall       0.619  0.015    0.604    0.634
+  seen_test   audio     f1           0.759  0.013    0.744    0.770
+  seen_test   audio     eer          0.276  0.015    0.262    0.292
+  seen_test   audio     auc          0.801  0.018    0.785    0.820
+  seen_test   fused     precision    0.977  0.019    0.956    0.994
+  seen_test   fused     recall       0.986  0.013    0.970    0.994
+  seen_test   fused     f1           0.981  0.006    0.975    0.987
+  seen_test   fused     eer          0.067  0.063    0.023    0.140
+  seen_test   fused     auc          0.979  0.028    0.947    0.998
+  seen_test   logistic  precision    0.981  0.017    0.963    0.994
+  seen_test   logistic  recall       0.996  0.004    0.993    1.000
+  seen_test   logistic  f1           0.988  0.007    0.981    0.994
+  seen_test   logistic  eer          0.018  0.011    0.006    0.026
+  seen_test   logistic  auc          0.999  0.001    0.998    1.000
+  unseen_test video     precision    1.000  0.000    1.000    1.000
+  unseen_test video     recall       0.433  0.051    0.376    0.475
+  unseen_test video     f1           0.603  0.050    0.547    0.644
+  unseen_test video     eer          0.367  0.036    0.326    0.388
+  unseen_test video     auc          0.701  0.032    0.667    0.731
+  unseen_test audio     precision    0.944  0.071    0.864    1.000
+  unseen_test audio     recall       0.344  0.122    0.237    0.477
+  unseen_test audio     f1           0.498  0.134    0.373    0.639
+  unseen_test audio     eer          0.248  0.030    0.220    0.279
+  unseen_test audio     auc          0.831  0.022    0.806    0.846
+  unseen_test fused     precision    0.972  0.030    0.941    1.000
+  unseen_test fused     recall       0.622  0.019    0.600    0.635
+  unseen_test fused     f1           0.759  0.023    0.733    0.777
+  unseen_test fused     eer          0.179  0.012    0.165    0.188
+  unseen_test fused     auc          0.894  0.023    0.869    0.914
+  unseen_test logistic  precision    0.976  0.026    0.948    1.000
+  unseen_test logistic  recall       0.664  0.045    0.612    0.692
+  unseen_test logistic  f1           0.789  0.027    0.759    0.811
+  unseen_test logistic  eer          0.148  0.021    0.125    0.165
+  unseen_test logistic  auc          0.901  0.017    0.883    0.916
+
+decision rules at the single stream thresholds, mean over runs
+  split       rule      metric        mean    std   ci low  ci high
+  seen_test   and       precision    1.000  0.000    1.000    1.000
+  seen_test   and       recall       0.262  0.028    0.235    0.292
+  seen_test   and       f1           0.415  0.035    0.381    0.452
+  seen_test   or        precision    0.985  0.010    0.974    0.994
+  seen_test   or        recall       0.992  0.004    0.987    0.994
+  seen_test   or        f1           0.988  0.007    0.981    0.994
+  unseen_test and       precision    1.000  0.000    1.000    1.000
+  unseen_test and       recall       0.132  0.061    0.082    0.200
+  unseen_test and       f1           0.229  0.094    0.152    0.333
+  unseen_test or        precision    0.973  0.030    0.941    1.000
+  unseen_test or        recall       0.645  0.068    0.600    0.723
+  unseen_test or        f1           0.775  0.051    0.733    0.832
+
+derived, per run then summarised
+  unseen fused precision minus best stream         -0.028  0.030   -0.059    0.000
+  unseen logistic precision minus best stream      -0.024  0.026   -0.052    0.000
+  seen minus unseen fused precision                 0.004  0.021   -0.019    0.018
+  seen minus unseen logistic precision              0.006  0.016   -0.013    0.016
+
+unseen test precision and recall per held out pair, mean over seeds
+  video family      audio family       video P audio P fused P logis P fused R
+  video_splice      audio_vocoder        1.000   0.944   0.972   0.976   0.622
+
+wall clock        1323.0s
+==============================================================================
+```
+
+The demo block quotes fused unseen precision 0.941. Over three seeds of the same
+held out pair the mean is 0.972, the sample standard deviation is 0.030 and the
+bootstrap interval of the mean is 0.941 to 1.000, so the demo draw sits at the
+bottom of that interval rather than in the middle of it. Video alone reaches
+precision 1.000 on the unseen split in all three runs, with a standard deviation of
+0.000, so the fused score does not beat the best single stream on precision in any
+of them: the gap is -0.028 on average (interval -0.059 to 0.000) for the weighted
+sum and -0.024 (-0.052 to 0.000) for the logistic fusion. What fusion buys is still
+recall, 0.622 against 0.433 for video alone.
+
+The run is committed as
+[`docs/runs/sweep-full-default-pair/sweep.json`](docs/runs/sweep-full-default-pair/sweep.json),
+and `tests/test_readme_numbers.py` re-renders the block above from it.
+
 ```
 $ uv run spoofline sweep
 ==============================================================================
@@ -882,9 +991,11 @@ generated one. `tests/test_sources.py` exercises the adapter on a written out cl
   the whole demo fits in seven minutes of CPU. Real face forensics works at much
   higher resolution and a print or replay attack is far subtler there.
 * **The demo is one seed and one held out pair.** The demo block is a single run
-  with `video_splice` and `audio_vocoder` held out. The sweep adds variance over
-  3 seeds and all 16 held out pairs, but only on the reduced profile; no full
-  profile sweep has been run.
+  with `video_splice` and `audio_vocoder` held out. Variance comes from two sweeps:
+  3 seeds and all 16 held out pairs on the reduced profile, and 3 seeds of the
+  default pair on the full profile. Sixteen pairs times three seeds of full size
+  training still does not fit on a CPU, so no full profile numbers exist for the
+  other 15 pairs.
 * **The threshold is fitted on 234 clips.** Choosing the lowest threshold that
   reaches the target precision is the most optimistic choice available on a finite
   calibration set, so some of the seen to unseen drop is threshold sampling noise

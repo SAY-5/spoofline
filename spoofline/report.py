@@ -11,6 +11,9 @@ POOL_ORDER = ("train", "calib", "test")
 COMBO_ORDER = ("bonafide", "video_only", "audio_only", "both")
 FUSION_ORDER = ("fused", "logistic")
 TEST_SPLITS = ("seen_test", "unseen_test")
+SWEEP_METRIC_ORDER = ("precision", "recall", "f1", "eer", "auc")
+SWEEP_RULE_ORDER = ("and", "or")
+SWEEP_RULE_METRIC_ORDER = ("precision", "recall", "f1")
 TIMING_ORDER = (
     "generate",
     "load",
@@ -250,10 +253,13 @@ def render_sweep(results: dict) -> str:
         f"  {'split':<12}{'detector':<10}{'metric':<11}{'mean':>7}{'std':>7}"
         f"{'ci low':>9}{'ci high':>9}",
     ]
-    for split, detectors in aggregate["metrics"].items():
-        for detector, metrics in detectors.items():
-            for metric, entry in metrics.items():
-                lines.append(f"  {split:<12}{detector:<10}{metric:<11}{_summary_cells(entry)}")
+    for split in ordered_keys(aggregate["metrics"], TEST_SPLITS):
+        detectors = aggregate["metrics"][split]
+        for detector in ordered_keys(detectors, DETECTOR_ORDER):
+            metrics = detectors[detector]
+            for metric in ordered_keys(metrics, SWEEP_METRIC_ORDER):
+                cells = _summary_cells(metrics[metric])
+                lines.append(f"  {split:<12}{detector:<10}{metric:<11}{cells}")
 
     lines += [
         "",
@@ -261,13 +267,17 @@ def render_sweep(results: dict) -> str:
         f"  {'split':<12}{'rule':<10}{'metric':<11}{'mean':>7}{'std':>7}"
         f"{'ci low':>9}{'ci high':>9}",
     ]
-    for split, rules in aggregate["rules"].items():
-        for rule, metrics in rules.items():
-            for metric, entry in metrics.items():
-                lines.append(f"  {split:<12}{rule:<10}{metric:<11}{_summary_cells(entry)}")
+    for split in ordered_keys(aggregate["rules"], TEST_SPLITS):
+        rules = aggregate["rules"][split]
+        for rule in ordered_keys(rules, SWEEP_RULE_ORDER):
+            metrics = rules[rule]
+            for metric in ordered_keys(metrics, SWEEP_RULE_METRIC_ORDER):
+                cells = _summary_cells(metrics[metric])
+                lines.append(f"  {split:<12}{rule:<10}{metric:<11}{cells}")
 
     lines += ["", "derived, per run then summarised"]
-    for name, entry in aggregate["derived"].items():
+    for name in ordered_keys(aggregate["derived"], tuple(DERIVED_LABELS)):
+        entry = aggregate["derived"][name]
         lines.append(f"  {DERIVED_LABELS.get(name, name):<48}{_summary_cells(entry)}")
 
     lines += [

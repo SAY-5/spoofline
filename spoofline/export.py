@@ -102,6 +102,9 @@ def export_run(
             )
         report["files"][stream] = path
         report["parity"][stream] = {"max_abs_diff": difference}
-    written = {**report, "files": {name: str(path) for name, path in report["files"].items()}}
+    # export.json is written into out_dir beside the onnx files, so record their names
+    # rather than absolute paths: a reader of the committed artifact cannot resolve a path
+    # from the machine that produced it. The returned report keeps the real paths.
+    written = {**report, "files": {name: Path(path).name for name, path in report["files"].items()}}
     (Path(out_dir) / "export.json").write_text(json.dumps(written, indent=2, sort_keys=True) + "\n")
     return report

@@ -1,8 +1,8 @@
 {
   "clips": 32,
   "files": {
-    "audio": "/private/var/folders/6c/m4yr6s8d37vdtgrqlwkn8z7h0000gn/T/gh-clones-92ddc9cd-74b2-40d9-9a56-7958ad348bcc/rework-spoofline/runs/full/onnx/audio.onnx",
-    "video": "/private/var/folders/6c/m4yr6s8d37vdtgrqlwkn8z7h0000gn/T/gh-clones-92ddc9cd-74b2-40d9-9a56-7958ad348bcc/rework-spoofline/runs/full/onnx/video.onnx"
+    "audio": "audio.onnx",
+    "video": "video.onnx"
   },
   "parity": {
     "audio": {

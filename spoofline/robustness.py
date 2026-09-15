@@ -4,18 +4,19 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
 
 from .config import SpooflineConfig
-from .data.dataset import make_splits
+from .data.dataset import load_splits
 from .data.generate import generate_corpus
 from .data.sources import Clip
 from .fusion import rule_metrics
 from .perturb import PERTURBATIONS, perturb_clip
 from .pipeline import FUSION_DETECTORS
+from .report import render_robustness
 from .scoring import RunScorer
 from .seeding import seed_everything
 
@@ -111,19 +112,20 @@ class RobustnessResult:
 def run_robustness(
     config: SpooflineConfig, run_dir: Path, progress: Progress = None
 ) -> RobustnessResult:
-    """Score the bona fide test clips under every perturbation with a finished run."""
-    from .report import render_robustness
+    """Score the bona fide test clips under every perturbation with a finished run.
 
+    The seed, the held out families and the split membership are read from the run
+    itself rather than from the profile, so a run trained with another seed or
+    another pair held out is scored on exactly the clips it was evaluated on.
+    """
     say = progress or (lambda _msg: None)
-    seed_everything(config.seed, config.threads)
-    source = generate_corpus(config.corpus, config.seed, config.corpus_dir)
-    splits = make_splits(
-        source.records,
-        config.unseen_families,
-        config.seed,
-        config.train_fraction,
-        config.calib_fraction,
-    )
+    run_dir = Path(run_dir)
+    run = json.loads((run_dir / "results.json").read_text())
+    seed = int(run["seed"])
+    config = replace(config, seed=seed, unseen_families=tuple(run["unseen_families"]))
+    seed_everything(seed, config.threads)
+    source = generate_corpus(config.corpus, seed, config.corpus_dir)
+    splits = load_splits(run_dir / "splits.json")
     scorer = RunScorer.from_run(run_dir)
     clips_by_split = {
         split: [source.load(cid) for cid in splits.as_dict()[split]] for split in TEST_SPLITS
@@ -135,6 +137,8 @@ def run_robustness(
     results = {
         "profile": config.profile,
         "run_dir": str(run_dir),
+        "seed": seed,
+        "unseen_families": list(config.unseen_families),
         "bonafide_clips": {
             split: sum(clip.record.label == 0 for clip in clips_by_split[split])
             for split in TEST_SPLITS

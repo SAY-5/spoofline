@@ -27,6 +27,7 @@ from .data.dataset import LoadedCorpus, load_corpus, make_splits
 from .data.generate import generate_corpus
 from .families import AUDIO_FAMILIES, VIDEO_FAMILIES
 from .pipeline import calibrate_all, modality_labels, split_metrics
+from .report import render_sweep
 from .seeding import seed_everything
 from .train import score_clips, train_stream
 
@@ -306,8 +307,6 @@ def run_sweep(
     progress: Progress = None,
 ) -> SweepResult:
     """Train every seed and held out pair, then aggregate the cached logits."""
-    from .report import render_sweep
-
     say = progress or (lambda _msg: None)
     started = time.perf_counter()
     seeds = sweep_seeds(config.seed, n_seeds)

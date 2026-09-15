@@ -136,7 +136,10 @@ def run_robustness(
     say(f"robustness: {len(bonafide)} bona fide test clips, {len(PERTURBATIONS)} perturbations")
     results = {
         "profile": config.profile,
-        "run_dir": str(run_dir),
+        # Recorded as the repository sees it (for example runs/full). report.py prints this
+        # field, so an absolute path from the producing machine would be meaningless to a
+        # reader of the committed artifact.
+        "run_dir": str(Path(*Path(run_dir).resolve().parts[-2:])),
         "seed": seed,
         "unseen_families": list(config.unseen_families),
         "bonafide_clips": {

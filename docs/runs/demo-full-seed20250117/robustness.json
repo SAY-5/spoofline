@@ -541,7 +541,7 @@
     }
   ],
   "profile": "full",
-  "run_dir": "/private/var/folders/6c/m4yr6s8d37vdtgrqlwkn8z7h0000gn/T/gh-clones-92ddc9cd-74b2-40d9-9a56-7958ad348bcc/rework-spoofline/runs/full",
+  "run_dir": "runs/full",
   "seed": 20250117,
   "unseen_families": [
     "video_splice",

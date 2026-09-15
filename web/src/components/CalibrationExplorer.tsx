@@ -2,6 +2,7 @@ import { useMemo, useRef, useState, type PointerEvent } from "react";
 import {
   countsAt,
   fuse,
+  logisticFuse,
   plattProbabilities,
   plattProbability,
   precisionRecall,
@@ -12,7 +13,7 @@ import {
   type PrCurve,
 } from "../lib/calibration.ts";
 import type { DemoData } from "../lib/data.ts";
-import type { Detector, TestSplit } from "../lib/types.ts";
+import type { AnyDetector, Detector, TestSplit } from "../lib/types.ts";
 import { fixed } from "../format.ts";
 import { Axis, ChartFrame, linear, logOdds, type Frame } from "./charts.tsx";
 
@@ -126,7 +127,7 @@ function PrChart({ title, curve, target, point, onTarget }: PrChartProps) {
       </figcaption>
       <ChartFrame
         frame={frame}
-        label={`${title}: at target precision ${fixed(target)} the threshold is ${fixed(point.threshold, 4)}, precision ${fixed(point.achievedPrecision)}, recall ${fixed(point.recall)}`}
+        label={`${title}: at target precision ${fixed(target)} the threshold is ${fixed(point.threshold, 4)}, precision ${fixed(point.achievedPrecision)}, recall ${fixed(point.recall)}. Drag the target line, or use the target precision slider, to change the target.`}
       >
         <g ref={svgRef}>
           <Axis
@@ -203,13 +204,15 @@ export function CalibrationExplorer({ data }: { data: DemoData }) {
     const pv = plattProbabilities(cal.video.calibrator, calib.video_logit);
     const pa = plattProbabilities(cal.audio.calibrator, calib.audio_logit);
     const pf = pv.map((v, i) => fuse(cal.fused.weight, v, pa[i]!));
+    const pl = pv.map((v, i) => logisticFuse(cal.logistic, v, pa[i]!));
     const tv = plattProbabilities(cal.video.calibrator, test.video_logit);
     const ta = plattProbabilities(cal.audio.calibrator, test.audio_logit);
     const tf = tv.map((v, i) => fuse(cal.fused.weight, v, ta[i]!));
+    const tl = tv.map((v, i) => logisticFuse(cal.logistic, v, ta[i]!));
     return {
       labels,
-      calibScores: { video: pv, audio: pa, fused: pf } as Record<Detector, Float64Array>,
-      testScores: { video: tv, audio: ta, fused: tf } as Record<Detector, Float64Array>,
+      calibScores: { video: pv, audio: pa, fused: pf, logistic: pl } as Record<AnyDetector, Float64Array>,
+      testScores: { video: tv, audio: ta, fused: tf, logistic: tl } as Record<AnyDetector, Float64Array>,
       curves: {
         video: precisionRecallCurve(pv, labels),
         audio: precisionRecallCurve(pa, labels),
@@ -219,14 +222,14 @@ export function CalibrationExplorer({ data }: { data: DemoData }) {
   }, [cal, calib, test]);
 
   const points = useMemo(() => {
-    const out = {} as Record<Detector, OperatingPoint>;
-    for (const d of ["video", "audio", "fused"] as Detector[]) {
+    const out = {} as Record<AnyDetector, OperatingPoint>;
+    for (const d of ["video", "audio", "fused", "logistic"] as AnyDetector[]) {
       out[d] = thresholdAtPrecision(base.calibScores[d], base.labels, target);
     }
     return out;
   }, [base, target]);
 
-  const testAt = (detector: Detector, split: TestSplit) => {
+  const testAt = (detector: AnyDetector, split: TestSplit) => {
     const scores: number[] = [];
     const labels: number[] = [];
     test.split.forEach((s, i) => {
@@ -239,7 +242,12 @@ export function CalibrationExplorer({ data }: { data: DemoData }) {
   };
 
   const atDefault = Math.abs(target - manifest.target_precision) < 1e-9;
-  const names: Record<Detector, string> = { video: "Video", audio: "Audio", fused: `Fused, w = ${fixed(cal.fused.weight, 2)}` };
+  const names: Record<AnyDetector, string> = {
+    video: "Video",
+    audio: "Audio",
+    fused: `Weighted sum, w = ${fixed(cal.fused.weight, 2)}`,
+    logistic: "Logistic fusion",
+  };
 
   return (
     <div className="calib">
@@ -259,7 +267,11 @@ export function CalibrationExplorer({ data }: { data: DemoData }) {
         <button type="button" className="btn btn-ghost" onClick={() => setTarget(manifest.target_precision)} disabled={atDefault}>
           Reset to {fixed(manifest.target_precision, 2)}
         </button>
-        <p className="control-hint">Drag the amber target line on any precision chart, or use the slider. The fusion weight stays at the fitted {fixed(cal.fused.weight, 2)}.</p>
+        <p className="control-hint">
+          Drag the amber target line on any precision chart, or use the slider. Only the thresholds move: the fusion
+          weight stays at the fitted {fixed(cal.fused.weight, 2)} and the logistic coefficients stay as fitted on the
+          calibration split.
+        </p>
       </div>
 
       <div className="calib-grid">
@@ -305,8 +317,8 @@ export function CalibrationExplorer({ data }: { data: DemoData }) {
               <th scope="col">unseen R</th>
             </tr>
           </thead>
-          <tbody aria-live="polite">
-            {(["video", "audio", "fused"] as Detector[]).map((d) => {
+          <tbody>
+            {(["video", "audio", "fused", "logistic"] as AnyDetector[]).map((d) => {
               const seen = testAt(d, "seen_test");
               const unseen = testAt(d, "unseen_test");
               return (
@@ -327,6 +339,11 @@ export function CalibrationExplorer({ data }: { data: DemoData }) {
             })}
           </tbody>
         </table>
+        <p className="sr-only" aria-live="polite">
+          At target precision {fixed(target)} the fused threshold is {fixed(points.fused.threshold, 4)}, with unseen
+          precision {fixed(testAt("fused", "unseen_test").precision)} and unseen recall{" "}
+          {fixed(testAt("fused", "unseen_test").recall)}.
+        </p>
       </div>
     </div>
   );

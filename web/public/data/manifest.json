@@ -1,5 +1,6 @@
 {
-  "trained_from_commit": "7181cf425af215ebadfee6506e50f70899b66ac5",
+  "trained_from_commit": "c4952e77d45f4deeac6c0c92cad8a02cecc28445",
+  "trained_from_describe": "v5.0.0-2-gc4952e7",
   "seed": 20250117,
   "profile": "full",
   "target_precision": 0.95,
@@ -56,6 +57,10 @@
         3,
         64,
         64
+      ],
+      "dynamic_axes": [
+        "batch",
+        "steps"
       ]
     },
     "audio": {
@@ -68,6 +73,10 @@
         1,
         64,
         20
+      ],
+      "dynamic_axes": [
+        "batch",
+        "steps"
       ]
     }
   },
@@ -95,6 +104,21 @@
         "threshold": 0.04341514743434677
       },
       "weight": 0.05
+    },
+    "logistic": {
+      "coefficients": {
+        "disagreement": 3.0163683030269826,
+        "p_audio": 2.4743513731548155,
+        "p_video": 3.251874364194324
+      },
+      "intercept": -2.650064834501749,
+      "operating": {
+        "achieved_precision": 0.9523809523809523,
+        "reached_target": true,
+        "recall": 1.0,
+        "target_precision": 0.95,
+        "threshold": 0.08688100170621176
+      }
     },
     "video": {
       "calibrator": {

@@ -1,6 +1,7 @@
 /**
  * Calibration and fusion, mirroring spoofline/calibrate.py and spoofline/fusion.py.
  */
+import type { Attribution, LogisticFusionJson } from "./types.ts";
 
 export interface Platt {
   a: number;
@@ -139,6 +140,32 @@ export function thresholdAtPrecision(
 
 export function fuse(weight: number, pVideo: number, pAudio: number): number {
   return weight * pVideo + (1 - weight) * pAudio;
+}
+
+/** The learned fusion of spoofline.fusion.LogisticFusion over both probabilities and their gap. */
+export function logisticFuse(model: LogisticFusionJson, pVideo: number, pAudio: number): number {
+  const c = model.coefficients;
+  const z =
+    c.p_video * pVideo + c.p_audio * pAudio + c.disagreement * Math.abs(pVideo - pAudio) + model.intercept;
+  return 1 / (1 + Math.exp(-Math.min(60, Math.max(-60, z))));
+}
+
+/**
+ * Which stream triggered a fusion decision, silencing one stream at a time, as in
+ * spoofline.fusion.attribute. A silenced stream reports probability 0.
+ */
+export function attribute(
+  decide: (pVideo: number, pAudio: number) => boolean,
+  pVideo: number,
+  pAudio: number,
+): Attribution {
+  if (!decide(pVideo, pAudio)) return "none";
+  const videoAlone = decide(pVideo, 0);
+  const audioAlone = decide(0, pAudio);
+  if (videoAlone && audioAlone) return "either";
+  if (videoAlone) return "video";
+  if (audioAlone) return "audio";
+  return "joint";
 }
 
 /** Grid search of the fusion weight, as in fit_fusion (np.linspace(0, 1, grid)). */

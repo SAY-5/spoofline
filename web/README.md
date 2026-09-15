@@ -5,11 +5,21 @@ backend: everything below happens in the visitor's tab.
 
 ## Where the weights come from
 
-The checkpoints were trained with `make demo` at commit
-`7181cf425af215ebadfee6506e50f70899b66ac5`. That run printed a summary block
-identical to the one in the top level README, timings aside, and
-`web/scripts/export.py` then wrote everything under `public/data`.
-`manifest.json` and `reference.json` record the same commit.
+The checkpoints were trained by `make demo` at commit
+`c4952e77d45f4deeac6c0c92cad8a02cecc28445` (`git describe`: `v5.0.0-2-gc4952e7`),
+profile `full`, seed 20250117, with `video_splice` and `audio_vocoder` held out.
+`web/scripts/export.py` then wrote everything under `public/data`, and both
+`manifest.json` and `reference.json` record that commit and its describe string.
+The same run's summary block is the one pasted in the top level README, and its
+`results.json` is committed under `docs/runs/demo-full-seed20250117/`.
+
+## What the page shows, and what it computes
+
+The headline figures, the catch strips, the calibration table and the unseen family
+section are the measured results of that offline run, replayed from the exported
+logits. The clip lab is the part that scores clips in the tab: pick a clip and both
+graphs run locally, and the page then applies the calibration, both fusion rules and
+the attribution itself.
 
 ## What runs in the browser
 
@@ -22,31 +32,36 @@ identical to the one in the top level README, timings aside, and
   (512 point FFT, hop 160, periodic Hann window, reflect padding, 64 HTK mel bands
   from the exported torchaudio filterbank) cut into ten 20 frame patches.
 * **Both networks, in onnxruntime-web.** `models/video.onnx` and
-  `models/audio.onnx` are the trained CNN-LSTMs with their normalisers folded in,
-  exported at a fixed length and batch of one, where packing and the attention mask
-  have no effect. They run on the WebAssembly backend, bundled with the page rather
-  than fetched from a CDN.
-* **Calibration and fusion, in TypeScript.** `src/lib/calibration.ts` applies the
-  exported Platt parameters, per stream thresholds, fusion weight and fused
-  threshold, and reimplements threshold selection and the fusion grid search so the
-  calibration explorer can move the target precision live.
+  `models/audio.onnx` come from `spoofline.export.export_stream`: the trained
+  CNN-LSTMs with their normalisers folded in and dynamic batch and step axes. The
+  page feeds one clip at a time. They run on the WebAssembly backend, bundled with
+  the page rather than fetched from a CDN.
+* **Calibration and both fusions, in TypeScript.** `src/lib/calibration.ts` applies
+  the exported Platt parameters, the per stream thresholds, the weighted sum and the
+  logistic fusion, attributes each decision to a stream the way
+  `spoofline.fusion.attribute` does, and reimplements threshold selection and the
+  fusion grid search so the calibration explorer can move the target precision live.
 
 ## Checking it
 
 ```bash
 uv run --with onnx --with onnxruntime python web/scripts/export.py --trained-from <sha>
 cd web
-npm install
+npm ci
 npm run selfcheck   # onnxruntime-node parity against PyTorch for every exported clip
-npm run bundle      # the same as npm run build, which Vercel uses
+npm run build       # the production bundle, which Vercel runs
 ```
 
 The export refuses to write if the calibration scores do not refit to the exact
 Platt parameters, thresholds and fusion weight of the run, or if the test scores do
-not reproduce its metrics table. `npm run selfcheck` then holds every raw logit to
-within 1e-4 of PyTorch and requires identical per stream and fused decisions.
+not reproduce its metrics table. Measured on the export of the run above,
+`npm run selfcheck` passed 370 assertions over 25 clips: worst raw logit gap
+3.53e-5 against PyTorch, worst log mel gap 1.50e-4 against torchaudio, and
+identical per stream flags, weighted and logistic decisions and triggering stream
+on every clip. The same three commands run in CI on every push.
 
 ## Deploying
 
 `vercel.json` builds with `npm run build` and serves `dist/`. Set the project root
-to `web/`.
+to `web/`. The bundle is 20 MB on disk, 14 MB of which is the onnxruntime-web
+WebAssembly binary.

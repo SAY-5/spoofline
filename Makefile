@@ -8,8 +8,8 @@ setup:
 	$(UV) sync
 
 lint:
-	$(RUN) ruff check spoofline tests
-	$(RUN) ruff format --check spoofline tests
+	$(RUN) ruff check spoofline tests web/scripts
+	$(RUN) ruff format --check spoofline tests web/scripts
 
 test:
 	$(RUN) pytest

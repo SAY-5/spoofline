@@ -150,3 +150,19 @@ def test_sweep_runs_every_pair_on_the_tiny_profile_and_reuses_cached_scores(tmp_
     second = run_sweep(config, 1, 1, tmp_path / "corpus", tmp_path / "out", messages.append)
     assert any("16 runs cached, 0 to train" in message for message in messages)
     assert second.results["aggregate"] == first.results["aggregate"]
+
+
+def test_restricting_the_pairs_runs_one_split_and_reuses_its_cache(tmp_path):
+    fast = StreamTrainConfig(epochs=1, batch_size=4, hidden_size=16, embed_size=16)
+    config = replace(profile("tiny"), video=fast, audio=fast)
+    only = (tuple(config.unseen_families),)
+    messages: list[str] = []
+    first = run_sweep(config, 1, 1, tmp_path / "corpus", tmp_path / "out", messages.append, only)
+    assert first.results["aggregate"]["n_runs"] == 1
+    assert first.results["pairs"] == [list(config.unseen_families)]
+    assert len(first.results["per_pair"]) == 1
+
+    messages.clear()
+    again = run_sweep(config, 1, 1, tmp_path / "corpus", tmp_path / "out", messages.append, only)
+    assert any("1 runs cached, 0 to train" in message for message in messages)
+    assert again.results["aggregate"] == first.results["aggregate"]

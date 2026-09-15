@@ -6,10 +6,35 @@ RULE = "=" * 78
 DETECTOR_ORDER = ("video", "audio", "fused", "logistic")
 RULE_ORDER = ("and", "or", "weighted", "logistic")
 ATTRIBUTION_ORDER = ("none", "video", "audio", "either", "joint")
+SPLIT_ORDER = ("train", "calib", "seen_test", "unseen_test", "dropped")
+POOL_ORDER = ("train", "calib", "test")
+COMBO_ORDER = ("bonafide", "video_only", "audio_only", "both")
+FUSION_ORDER = ("fused", "logistic")
+TEST_SPLITS = ("seen_test", "unseen_test")
+TIMING_ORDER = (
+    "generate",
+    "load",
+    "train_video",
+    "train_audio",
+    "calibrate",
+    "evaluate",
+    "total",
+)
 
 
-def _counts_line(counts: dict[str, int]) -> str:
-    return " | ".join(f"{name} {value}" for name, value in counts.items())
+def ordered_keys(mapping: dict, order: tuple[str, ...] = ()) -> list[str]:
+    """Keys of ``mapping`` in ``order`` first, then the rest alphabetically.
+
+    The report must not inherit the key order of the dict it is handed: a run read
+    back from ``results.json`` has its keys sorted, so rendering a committed run
+    would otherwise print its rows in a different order from the run that wrote it.
+    """
+    known = [name for name in order if name in mapping]
+    return known + sorted(name for name in mapping if name not in order)
+
+
+def _counts_line(counts: dict[str, int], order: tuple[str, ...] = ()) -> str:
+    return " | ".join(f"{name} {counts[name]}" for name in ordered_keys(counts, order))
 
 
 def _fmt(value: float, digits: int = 3) -> str:
@@ -54,8 +79,10 @@ def render_evaluation(results: dict) -> str:
 
     lines += ["", "per family detection rate, fused detector at its calibrated threshold"]
     lines.append(f"  {'split':<12}{'family':<20}{'n':>6}{'detected':>10}{'rate':>8}")
-    for split in ("seen_test", "unseen_test"):
-        for family, row in results["family_rates"][split].items():
+    for split in TEST_SPLITS:
+        rates = results["family_rates"][split]
+        for family in ordered_keys(rates, ("bonafide",)):
+            row = rates[family]
             lines.append(
                 f"  {split:<12}{family:<20}{int(row['n']):>6}{int(row['detected']):>10}"
                 f"{_fmt(row['rate']):>8}"
@@ -67,9 +94,12 @@ def render_evaluation(results: dict) -> str:
         f"  {'split':<12}{'detector':<10}{'clips':<12}"
         + "".join(f"{name:>7}" for name in ATTRIBUTION_ORDER),
     ]
-    for split, detectors in results["attribution"].items():
-        for detector, rows in detectors.items():
-            for combo, counts in rows.items():
+    for split in TEST_SPLITS:
+        detectors = results["attribution"][split]
+        for detector in ordered_keys(detectors, FUSION_ORDER):
+            rows = detectors[detector]
+            for combo in ordered_keys(rows, COMBO_ORDER):
+                counts = rows[combo]
                 lines.append(
                     f"  {split:<12}{detector:<10}{combo:<12}"
                     + "".join(f"{counts[name]:>7}" for name in ATTRIBUTION_ORDER)
@@ -101,8 +131,8 @@ def render_summary(results: dict) -> str:
         f"video families    {_counts_line(video_families)}",
         f"audio families    {_counts_line(audio_families)}",
         f"unseen families   {', '.join(results['unseen_families'])}",
-        f"splits            {_counts_line(splits['counts'])}",
-        f"identity pools    {_counts_line(splits['identity_pools'])}",
+        f"splits            {_counts_line(splits['counts'], SPLIT_ORDER)}",
+        f"identity pools    {_counts_line(splits['identity_pools'], POOL_ORDER)}",
         "",
         "training",
     ]
@@ -176,8 +206,8 @@ def render_summary(results: dict) -> str:
         "wall clock",
     ]
     timings = results["timings"]
-    for name, seconds in timings.items():
-        lines.append(f"  {name:<16}{seconds:8.1f}s")
+    for name in ordered_keys(timings, TIMING_ORDER):
+        lines.append(f"  {name:<16}{timings[name]:8.1f}s")
     lines.append(RULE)
     return "\n".join(lines)
 

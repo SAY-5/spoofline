@@ -19,16 +19,17 @@ Unseen families: video_splice, audio_vocoder. Identity pools never mix.
 
 | split | clips |
 | --- | --- |
+| train | 751 |
 | calib | 234 |
 | seen_test | 197 |
-| train | 751 |
 | unseen_test | 123 |
+| dropped | 295 |
 
 | identity pool | identities |
 | --- | --- |
+| train | 48 |
 | calib | 16 |
 | test | 16 |
-| train | 48 |
 
 ## Thresholds
 

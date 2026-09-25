@@ -14,6 +14,7 @@ across a split boundary, and no held out family appears in train or calib.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,6 +41,7 @@ class Splits:
     unseen_test: tuple[str, ...]
     identity_pools: dict[str, tuple[str, ...]]
     unseen_families: tuple[str, ...]
+    dropped: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, tuple[str, ...]]:
         return {
@@ -50,7 +52,10 @@ class Splits:
         }
 
     def counts(self) -> dict[str, int]:
-        return {name: len(ids) for name, ids in self.as_dict().items()}
+        """Clips per split, plus the train and calib clips dropped for an unseen family."""
+        counts = {name: len(ids) for name, ids in self.as_dict().items()}
+        counts["dropped"] = len(self.dropped)
+        return counts
 
 
 def make_splits(
@@ -81,16 +86,17 @@ def make_splits(
     seen_test: list[str] = []
     unseen_test: list[str] = []
     test_bonafide: list[str] = []
+    dropped: list[str] = []
 
     for record in sorted(records, key=lambda r: r.clip_id):
         pool = pool_of[record.identity]
         touches_unseen = any(f in unseen for f in record.families)
         if pool == "train":
-            if not touches_unseen:
-                train.append(record.clip_id)
+            # A held out family is dropped from the training view rather than
+            # relabelled, so it cannot leak into the weights or the calibration.
+            (dropped if touches_unseen else train).append(record.clip_id)
         elif pool == "calib":
-            if not touches_unseen:
-                calib.append(record.clip_id)
+            (dropped if touches_unseen else calib).append(record.clip_id)
         elif touches_unseen:
             unseen_test.append(record.clip_id)
         elif record.label == 0:
@@ -110,6 +116,7 @@ def make_splits(
         unseen_test=tuple(sorted(unseen_test)),
         identity_pools=pools,
         unseen_families=unseen,
+        dropped=tuple(sorted(dropped)),
     )
 
 
@@ -202,12 +209,26 @@ def collate(batch: list[dict]) -> dict:
 
 
 def save_splits(path: Path, splits: Splits) -> None:
-    import json
-
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "unseen_families": list(splits.unseen_families),
         "identity_pools": {k: list(v) for k, v in splits.identity_pools.items()},
         "splits": {k: list(v) for k, v in splits.as_dict().items()},
+        "dropped": list(splits.dropped),
     }
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+
+def load_splits(path: Path) -> Splits:
+    """The splits a finished run wrote, so post-run commands score the same clips."""
+    payload = json.loads(Path(path).read_text())
+    ids = payload["splits"]
+    return Splits(
+        train=tuple(ids["train"]),
+        calib=tuple(ids["calib"]),
+        seen_test=tuple(ids["seen_test"]),
+        unseen_test=tuple(ids["unseen_test"]),
+        identity_pools={k: tuple(v) for k, v in payload["identity_pools"].items()},
+        unseen_families=tuple(payload["unseen_families"]),
+        dropped=tuple(payload.get("dropped", ())),
+    )

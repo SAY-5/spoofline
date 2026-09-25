@@ -15,15 +15,17 @@ import {
   fitFusion,
   fitPlatt,
   fuse,
+  logisticFuse,
   plattProbabilities,
   plattProbability,
   precisionRecall,
   thresholdAtPrecision,
 } from "../src/lib/calibration.ts";
 import { clipShape, decodeClip } from "../src/lib/clip.ts";
+import { lineLabelY, linear, type Frame } from "../src/components/charts.tsx";
 import { logMel, melPatches, N_FREQS, N_MELS, videoSteps } from "../src/lib/features.ts";
 import { scoreClip } from "../src/lib/score.ts";
-import type { Detector, Manifest, Reference, ScoreRows, Stream, TestScores, TestSplit } from "../src/lib/types.ts";
+import type { AnyDetector, Manifest, Reference, ScoreRows, Stream, TestScores, TestSplit } from "../src/lib/types.ts";
 
 const LOGIT_TOL = 1e-4;
 const DATA = join(dirname(fileURLToPath(import.meta.url)), "..", "public", "data");
@@ -77,6 +79,13 @@ async function main(): Promise<void> {
   }
   check("fusion weight equals the run", reference.run.calibration.fused.weight === cal.fused.weight);
   check("fusion threshold equals the run", reference.run.calibration.fused.operating.threshold === cal.fused.operating.threshold);
+  const learned = reference.run.calibration.logistic;
+  for (const name of ["p_video", "p_audio", "disagreement"] as const) {
+    check(`logistic ${name} coefficient equals the run`, learned.coefficients[name] === cal.logistic.coefficients[name]);
+  }
+  check("logistic intercept equals the run", learned.intercept === cal.logistic.intercept);
+  check("logistic threshold equals the run", learned.operating.threshold === cal.logistic.operating.threshold);
+  check("logistic disagreement coefficient is positive", cal.logistic.coefficients.disagreement > 0, `${cal.logistic.coefficients.disagreement}`);
 
   // Log mel front end against torchaudio.
   const checkClip = manifest.features.logmel_check_clip;
@@ -118,20 +127,38 @@ async function main(): Promise<void> {
   close("fusion weight reproduces from the grid search", fusion.weight, cal.fused.weight, 1e-12);
   close("fusion threshold reproduces from the grid search", fusion.operating.threshold, cal.fused.operating.threshold, 1e-12);
 
+  // The Platt threshold label keeps clear of the bona fide cluster along the bottom axis.
+  const frame: Frame = { width: 480, height: 300, left: 52, right: 16, top: 16, bottom: 44 };
+  const axisY = frame.height - frame.bottom;
+  const yOf = linear(0, 1, axisY, frame.top);
+  const audioLine = yOf(cal.audio.operating.threshold);
+  const videoLine = yOf(cal.video.operating.threshold);
+  check("audio threshold label sits 6px above a line far from the axis", lineLabelY(frame, audioLine) === audioLine - 6);
+  check("video threshold line lies within 14px of the axis", axisY - videoLine < 14, `${axisY - videoLine}`);
+  check("video threshold label is held 20px above the axis", lineLabelY(frame, videoLine) === axisY - 20);
+  let labelInFrame = true;
+  for (let p = 0; p <= 1; p += 0.001) {
+    const labelY = lineLabelY(frame, yOf(p));
+    if (labelY < frame.top - 6 || labelY > axisY - 20) labelInFrame = false;
+  }
+  check("threshold label baseline stays between the frame top and the axis clearance for every probability", labelInFrame);
+
   // Test split metrics table.
   const testPv = plattProbabilities(cal.video.calibrator, test.video_logit);
   const testPa = plattProbabilities(cal.audio.calibrator, test.audio_logit);
   const testPf = testPv.map((pv, i) => fuse(cal.fused.weight, pv, testPa[i]!));
-  const scoresFor: Record<Detector, Float64Array> = { video: testPv, audio: testPa, fused: testPf };
-  const thresholdFor: Record<Detector, number> = {
+  const testPl = testPv.map((pv, i) => logisticFuse(cal.logistic, pv, testPa[i]!));
+  const scoresFor: Record<AnyDetector, Float64Array> = { video: testPv, audio: testPa, fused: testPf, logistic: testPl };
+  const thresholdFor: Record<AnyDetector, number> = {
     video: cal.video.operating.threshold,
     audio: cal.audio.operating.threshold,
     fused: cal.fused.operating.threshold,
+    logistic: cal.logistic.operating.threshold,
   };
   for (const split of ["seen_test", "unseen_test"] as TestSplit[]) {
     const idx = test.split.flatMap((s, i) => (s === split ? [i] : []));
     const labels = idx.map((i) => test.label[i]!);
-    for (const detector of ["video", "audio", "fused"] as Detector[]) {
+    for (const detector of ["video", "audio", "fused", "logistic"] as AnyDetector[]) {
       const scores = idx.map((i) => scoresFor[detector][i]!);
       const counts = countsAt(scores, labels, thresholdFor[detector]);
       const pr = precisionRecall(counts);
@@ -166,8 +193,12 @@ async function main(): Promise<void> {
     check(`${entry.id} audio verdict matches`, got.audio.flags === want.audio_flags);
     check(`${entry.id} fused decision matches`, got.fused.decision === want.decision);
     close(`${entry.id} fused probability within 1e-5`, got.fused.probability, want.fused_probability, 1e-5);
+    check(`${entry.id} logistic decision matches`, got.logistic.decision === want.logistic_decision);
+    close(`${entry.id} logistic probability within 1e-5`, got.logistic.probability, want.logistic_probability, 1e-5);
+    check(`${entry.id} triggering stream matches`, got.triggeredBy === want.triggered_by, `${got.triggeredBy} against ${want.triggered_by}`);
     const fromReference = scoreClip(cal, want.video_logit, want.audio_logit);
     close(`${entry.id} fusion rule reproduces the Python fused probability`, fromReference.fused.probability, want.fused_probability, 1e-12);
+    close(`${entry.id} logistic rule reproduces the Python logistic probability`, fromReference.logistic.probability, want.logistic_probability, 1e-12);
     const label = want.decision === "attack" ? 1 : 0;
     check(`${entry.id} Python decision agrees with the fused threshold`, (want.fused_probability >= cal.fused.operating.threshold ? 1 : 0) === label);
   }

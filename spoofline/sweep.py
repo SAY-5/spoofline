@@ -27,6 +27,7 @@ from .data.dataset import LoadedCorpus, load_corpus, make_splits
 from .data.generate import generate_corpus
 from .families import AUDIO_FAMILIES, VIDEO_FAMILIES
 from .pipeline import calibrate_all, modality_labels, split_metrics
+from .report import render_sweep
 from .seeding import seed_everything
 from .train import score_clips, train_stream
 
@@ -304,14 +305,18 @@ def run_sweep(
     corpus_root: Path,
     out_dir: Path,
     progress: Progress = None,
+    pairs: Sequence[Pair] | None = None,
 ) -> SweepResult:
-    """Train every seed and held out pair, then aggregate the cached logits."""
-    from .report import render_sweep
+    """Train every seed and held out pair, then aggregate the cached logits.
 
+    ``pairs`` defaults to all 16 leave two families out pairings. Restricting it to
+    one pair measures variance over seeds at a heavier profile, and the cache keys
+    are the same, so a later full sweep reuses those runs.
+    """
     say = progress or (lambda _msg: None)
     started = time.perf_counter()
     seeds = sweep_seeds(config.seed, n_seeds)
-    pairs = leave_two_out_pairs()
+    pairs = tuple(pairs) if pairs else leave_two_out_pairs()
     out_dir = Path(out_dir)
     tasks = [
         SweepTask(

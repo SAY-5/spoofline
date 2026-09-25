@@ -153,6 +153,21 @@ def combo_counts(records: Iterable[ClipRecord]) -> dict[str, int]:
     return dict(sorted(Counter(record.combo for record in records).items()))
 
 
+def corpus_meta(corpus: CorpusConfig, seed: int) -> dict:
+    """Everything that decides what a rendered corpus contains."""
+    return {
+        "seed": seed,
+        "name": corpus.name,
+        "n_clips": corpus.n_clips,
+        "n_identities": corpus.n_identities,
+        "n_frames": corpus.n_frames,
+        "frame_size": corpus.frame_size,
+        "sample_rate": corpus.sample_rate,
+        "duration_s": corpus.duration_s,
+        "n_samples": corpus.n_samples,
+    }
+
+
 def generate_corpus(
     corpus: CorpusConfig,
     seed: int,
@@ -163,17 +178,22 @@ def generate_corpus(
     """Render the whole corpus to ``out_dir`` and return a source over it."""
     out_dir = Path(out_dir)
     manifest_path = out_dir / "manifest.json"
+    meta = corpus_meta(corpus, seed)
     if manifest_path.exists() and not force:
         source = NpzCorpusSource(out_dir)
-        cached = (source.meta.get("seed"), source.meta.get("n_clips"))
-        if cached == (seed, corpus.n_clips):
+        cached = {key: source.meta.get(key) for key in meta}
+        if cached == meta:
             if progress:
                 progress(f"corpus cache hit: {len(source)} clips at {out_dir}")
             return source
+        differences = ", ".join(
+            f"{key}={cached[key]!r} on disk against {meta[key]!r} requested"
+            for key in meta
+            if cached[key] != meta[key]
+        )
         raise ValueError(
-            f"{out_dir} already holds a corpus generated with seed={cached[0]} and "
-            f"{cached[1]} clips, but seed={seed} with {corpus.n_clips} clips was requested. "
-            "Point at another directory or pass force to overwrite it."
+            f"{out_dir} already holds a corpus generated with a different shape "
+            f"({differences}). Point at another directory or pass force to overwrite it."
         )
 
     (out_dir / "clips").mkdir(parents=True, exist_ok=True)

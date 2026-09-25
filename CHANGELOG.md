@@ -3,6 +3,47 @@
 All notable changes to spoofline. Versions follow semantic versioning and each
 one is an annotated git tag with a matching GitHub release.
 
+## Unreleased
+
+The browser demo as a first class deliverable, and every README figure gated on a
+committed artifact.
+
+* `web/scripts/export.py` scores its reference through
+  `spoofline.scoring.RunScorer` and exports both graphs through
+  `spoofline.export.export_stream`. It had kept a second copy of the ONNX wrapper
+  and imported `score_single_clip`, which the v4 series removed, so the documented
+  way to rebuild the page had been broken at HEAD.
+* The page shows what the repository computes: the logistic fusion beside the
+  weighted sum in the calibration table and in the clip lab, and the stream each
+  fusion decision is attributed to. The hero names the corpus, the seed, the held
+  out pair and the training commit, and says that the catch strips replay exported
+  logits rather than scoring in the tab.
+* CI runs the page: `npm ci`, `npm run typecheck`, `npm run selfcheck` and the
+  production bundle, and `ruff` now lints `web/scripts` as well. The self-check grew
+  from 258 to 370 assertions over 25 clips, because both fusion probabilities, both
+  decisions and the attribution now have to match PyTorch.
+* `docs/runs/` holds the JSON of the runs the README quotes, and
+  `tests/test_readme_numbers.py` re-renders every pasted block from it, so a stale
+  table fails the suite instead of drifting. The demo run was re-measured on this
+  branch: every metric reproduced, and the latency table was re-measured on a
+  quieter machine.
+* `spoofline sweep --pairs default` restricts the sweep to the profile's held out
+  pair. Three seeds of it at the full profile put the headline in context: fused
+  unseen precision 0.972 (std 0.030, bootstrap interval 0.941 to 1.000), so the
+  demo run's 0.941 sits at the bottom of the interval, and video alone holds
+  precision 1.000 in all three runs.
+* `spoofline robustness` takes its seed, held out families and split membership
+  from the run's `results.json` and `splits.json` instead of recomputing them from
+  the profile, so a run trained with another seed can be post-processed.
+* `Splits.counts()` reports the clips dropped for carrying a held out family, so
+  the four split sizes and the dropped count add up to the corpus.
+* The report orders its rows itself instead of inheriting the key order of the
+  dict it is handed, so a run rendered from `results.json` prints what the run
+  printed.
+* On Linux torch and torchaudio resolve from the PyTorch CPU index, so a CPU only
+  test run no longer installs the CUDA toolkit, and CI installs with
+  `uv sync --locked`.
+
 ## 5.0.0
 
 Deployment path.
@@ -54,7 +95,7 @@ Robustness to benign degradation.
 
 ## 3.0.0
 
-Fusion that earns its place, measured.
+Logistic fusion and per clip attribution.
 
 * Logistic fusion over both calibrated probabilities and their absolute
   disagreement, fitted by a penalised Newton solve on the calibration split only,
@@ -77,7 +118,7 @@ Fusion that earns its place, measured.
 
 ## 2.0.0
 
-Evaluation you can trust.
+Seed and held out pair sweep with bootstrap intervals.
 
 * `spoofline sweep` runs every leave two families out split, one held out video
   family paired with one held out audio family (16 splits), for several seeds in

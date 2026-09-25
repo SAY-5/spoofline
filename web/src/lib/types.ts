@@ -1,7 +1,10 @@
 export type Stream = "video" | "audio";
 export type Detector = Stream | "fused";
+export type FusionName = "fused" | "logistic";
+export type AnyDetector = Stream | FusionName;
 export type TestSplit = "seen_test" | "unseen_test";
 export type Combo = "bonafide" | "video_only" | "audio_only" | "both";
+export type Attribution = "none" | "video" | "audio" | "either" | "joint";
 
 export interface OperatingJson {
   threshold: number;
@@ -17,10 +20,17 @@ export interface StreamCalibrationJson {
   operating: OperatingJson;
 }
 
+export interface LogisticFusionJson {
+  coefficients: { p_video: number; p_audio: number; disagreement: number };
+  intercept: number;
+  operating: OperatingJson;
+}
+
 export interface CalibrationJson {
   video: StreamCalibrationJson;
   audio: StreamCalibrationJson;
   fused: { weight: number; operating: OperatingJson };
+  logistic: LogisticFusionJson;
 }
 
 export interface ClipEntry {
@@ -46,6 +56,7 @@ export interface CorpusShape {
 
 export interface Manifest {
   trained_from_commit: string;
+  trained_from_describe: string;
   seed: number;
   profile: string;
   target_precision: number;
@@ -66,7 +77,10 @@ export interface Manifest {
     logmel_check_clip: string;
     logmel_check_shape: [number, number];
   };
-  models: Record<Stream, { path: string; input: string; output: string; shape: number[] }>;
+  models: Record<
+    Stream,
+    { path: string; input: string; output: string; shape: number[]; dynamic_axes: string[] }
+  >;
   calibration: CalibrationJson;
   gallery: { identity: string; clips: Record<string, string> };
   clips: ClipEntry[];
@@ -78,9 +92,12 @@ export interface ReferenceClip {
   video_probability: number;
   audio_probability: number;
   fused_probability: number;
+  logistic_probability: number;
   video_flags: boolean;
   audio_flags: boolean;
   decision: "attack" | "bonafide";
+  logistic_decision: "attack" | "bonafide";
+  triggered_by: Attribution;
 }
 
 export interface MetricPoint {
@@ -106,17 +123,23 @@ export interface RuleMetrics {
 
 export interface RunJson {
   calibration: CalibrationJson;
-  metrics: Record<TestSplit, Record<Detector, MetricPoint>>;
-  rules: Record<TestSplit, Record<"and" | "or" | "weighted", RuleMetrics>>;
+  metrics: Record<TestSplit, Record<AnyDetector, MetricPoint>>;
+  rules: Record<TestSplit, Record<"and" | "or" | "weighted" | "logistic", RuleMetrics>>;
   family_rates: Record<TestSplit, Record<string, { n: number; detected: number; rate: number }>>;
+  attribution: Record<TestSplit, Record<FusionName, Record<Combo, Record<Attribution, number>>>>;
   headline: {
     fused_precision: number;
+    logistic_precision: number;
     video_precision: number;
     audio_precision: number;
     fused_recall: number;
+    logistic_recall: number;
     video_recall: number;
     audio_recall: number;
+    fused_precision_gap: number;
+    logistic_precision_gap: number;
     verdict: string;
+    logistic_verdict: string;
   };
   splits: { counts: Record<string, number>; identity_pools: Record<string, number> };
   combo_counts: Record<string, number>;

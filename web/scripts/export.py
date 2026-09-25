@@ -8,9 +8,14 @@ torch.onnx.export needs the onnx package, which is not a project dependency, hen
 the --with flags. Pass the commit the checkpoints were trained from; without it the
 last commit touching spoofline/, pyproject.toml, uv.lock or the Makefile is used.
 
+Clips are scored by `spoofline.scoring.RunScorer` and the graphs come from
+`spoofline.export.export_stream`, so the page is fed through the same code path the
+CLI uses rather than through a second copy of it.
+
 Everything lands in web/public/data:
 
-    models/video.onnx, models/audio.onnx   both streams, normaliser folded into the graph
+    models/video.onnx, models/audio.onnx   both streams, normaliser folded into the graph,
+                                           batch and step axes dynamic
     clips/<clip_id>.zlib                    lossless clip: deflate of uint8 frame residuals (left
                                             then temporal difference) and int16 audio differences
     mel_fbank.bin                           float32 mel filterbank, shape (n_fft // 2 + 1, n_mels)
@@ -18,8 +23,9 @@ Everything lands in web/public/data:
     manifest.json                           shapes, features, calibration, fusion, clip index
     calib_scores.json                       calibration split logits and labels, in pipeline order
     test_scores.json                        seen and unseen test split logits and labels
-    reference.json                          PyTorch logits, probabilities and decisions per exported
-                                            clip, plus the measured metrics of the run
+    reference.json                          PyTorch logits, probabilities, both fusion decisions and
+                                            the triggering stream per exported clip, plus the
+                                            measured metrics of the run
 
 The script checks its own output: the calibration split logits must refit to the
 exact Platt parameters and thresholds in calibration.json, the test split scores
@@ -37,58 +43,23 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
-import torch
-from torch import nn
 
 from spoofline.calibrate import PlattCalibrator, threshold_at_precision
 from spoofline.config import profile
 from spoofline.data.dataset import load_corpus
-from spoofline.data.features import (
-    HOP_LENGTH,
-    N_FFT,
-    N_MELS,
-    PATCH_WIDTH,
-    log_mel,
-    mel_patches,
-    mel_transform,
-    video_steps,
-)
+from spoofline.data.features import HOP_LENGTH, N_FFT, N_MELS, PATCH_WIDTH, log_mel, mel_transform
 from spoofline.data.sources import Clip, ClipRecord, NpzCorpusSource
+from spoofline.export import PARITY_TOLERANCE, export_stream, onnx_logits
 from spoofline.families import ALL_FAMILIES, FAMILY_DESCRIPTIONS
 from spoofline.fusion import fit_fusion
 from spoofline.metrics import evaluate
-from spoofline.models.cnn_lstm import CnnLstmDetector, load_checkpoint
-from spoofline.pipeline import score_single_clip
+from spoofline.models.cnn_lstm import load_checkpoint
+from spoofline.scoring import STREAMS, MediaClip, RunScorer, clip_steps
 from spoofline.seeding import seed_everything
 from spoofline.train import score_clips
 
 REPO = Path(__file__).resolve().parents[2]
 MAX_CLIPS = 28
-STREAMS = ("video", "audio")
-
-
-class InferenceGraph(nn.Module):
-    """Batch of one, every step valid: normaliser, step encoder, LSTM, attention, head.
-
-    With no padding, packing and the attention mask change nothing, so this is the
-    same computation as CnnLstmDetector.forward on a single full length clip.
-    """
-
-    def __init__(self, model: CnnLstmDetector, mean: torch.Tensor, std: torch.Tensor) -> None:
-        super().__init__()
-        self.model = model
-        channels = mean.numel()
-        self.register_buffer("mean", mean.float().view(1, 1, channels, 1, 1).clone())
-        self.register_buffer("std", std.float().view(1, 1, channels, 1, 1).clone())
-
-    def forward(self, steps: torch.Tensor) -> torch.Tensor:
-        x = (steps - self.mean) / self.std
-        batch, n_steps = x.shape[0], x.shape[1]
-        embedded = self.model.encoder(x.reshape(batch * n_steps, *x.shape[2:]))
-        sequence, _ = self.model.lstm(embedded.view(batch, n_steps, -1))
-        weights = torch.softmax(self.model.attention.score(sequence).squeeze(-1), dim=1)
-        pooled = (sequence * weights.unsqueeze(-1)).sum(dim=1)
-        return self.model.head(pooled).squeeze(-1)
 
 
 class SubsetSource:
@@ -149,19 +120,22 @@ def combo(record: ClipRecord) -> str:
     return "bonafide"
 
 
-def training_commit() -> str:
-    paths = ["spoofline", "pyproject.toml", "uv.lock", "Makefile"]
-    out = subprocess.run(
-        ["git", "log", "-1", "--format=%H", "--", *paths],
-        cwd=REPO,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+def _git(*arguments: str) -> str:
+    out = subprocess.run(["git", *arguments], cwd=REPO, capture_output=True, text=True, check=True)
     return out.stdout.strip()
 
 
-def split_scores(run_dir, corpus_dir, clip_ids, config) -> dict[str, np.ndarray]:
+def training_commit() -> str:
+    paths = ["spoofline", "pyproject.toml", "uv.lock", "Makefile"]
+    return _git("log", "-1", "--format=%H", "--", *paths)
+
+
+def describe_commit(commit: str) -> str:
+    """`git describe` of the training commit: its nearest tag and the distance from it."""
+    return _git("describe", "--tags", "--always", commit)
+
+
+def split_scores(run_dir: Path, corpus_dir: Path, clip_ids: Sequence[str]) -> dict[str, np.ndarray]:
     """Logits through the exact batched path the pipeline used, so thresholds reproduce."""
     source = SubsetSource(NpzCorpusSource(corpus_dir), clip_ids)
     corpus = load_corpus(source)
@@ -169,7 +143,6 @@ def split_scores(run_dir, corpus_dir, clip_ids, config) -> dict[str, np.ndarray]
     for stream in STREAMS:
         model, normalizer, _ = load_checkpoint(run_dir / f"{stream}.pt")
         scores[stream] = score_clips(model, normalizer, corpus, list(clip_ids), stream)
-    del config
     return scores
 
 
@@ -224,21 +197,6 @@ def select_clips(records: dict[str, ClipRecord], split_of: dict[str, str], fused
     return gallery_identity, gallery, picks
 
 
-def export_graph(graph: InferenceGraph, shape: tuple[int, ...], path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    dummy = torch.zeros(shape, dtype=torch.float32)
-    torch.onnx.export(
-        graph,
-        (dummy,),
-        str(path),
-        input_names=["steps"],
-        output_names=["logit"],
-        opset_version=17,
-        do_constant_folding=True,
-        dynamo=False,
-    )
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--run-dir", type=Path, default=REPO / "runs" / "full")
@@ -262,7 +220,7 @@ def main() -> None:
 
     print("[1/5] rescoring the calibration and test splits through the pipeline path")
     calib_ids = splits["calib"]
-    calib = split_scores(run_dir, args.corpus_dir, calib_ids, config)
+    calib = split_scores(run_dir, args.corpus_dir, calib_ids)
     clip_labels = np.array([records[c].label for c in calib_ids], dtype=np.int64)
     for stream in STREAMS:
         modality = np.array(
@@ -289,7 +247,7 @@ def main() -> None:
 
     test_ids = sorted(splits["seen_test"] + splits["unseen_test"])
     split_of = {c: n for n in ("seen_test", "unseen_test") for c in splits[n]}
-    test = split_scores(run_dir, args.corpus_dir, test_ids, config)
+    test = split_scores(run_dir, args.corpus_dir, test_ids)
     platt = {s: PlattCalibrator.from_dict(calibration[s]["calibrator"]) for s in STREAMS}
     weight = float(calibration["fused"]["weight"])
     thresholds = {s: float(calibration[s]["operating"]["threshold"]) for s in STREAMS}
@@ -320,11 +278,11 @@ def main() -> None:
         if stale.suffix != ".zlib" or stale.stem not in picks:
             stale.unlink()
     rate = int(meta["sample_rate"])
-    reference_clips: dict[str, dict] = {}
     steps_by_clip: dict[str, dict[str, np.ndarray]] = {}
-    roles = {clip_id: [] for clip_id in picks}
+    roles: dict[str, list[str]] = {clip_id: [] for clip_id in picks}
     for family, clip_id in gallery.items():
         roles[clip_id].append(f"gallery:{family}")
+    media: list[MediaClip] = []
     for clip_id in picks:
         with np.load(source.path_for(clip_id)) as data:
             frames = np.ascontiguousarray(data["video"], dtype=np.uint8)
@@ -333,29 +291,22 @@ def main() -> None:
         if decode_clip(encoded, frames.shape) != (frames.tobytes(), audio.tobytes()):
             raise SystemExit(f"export check failed: {clip_id} does not round trip")
         (out / "clips" / f"{clip_id}.zlib").write_bytes(encoded)
-        wave = audio.astype(np.float32) / 32767.0
-        steps_by_clip[clip_id] = {
-            "video": video_steps(frames)[None],
-            "audio": mel_patches(log_mel(wave, rate))[None],
-        }
-        scored = score_single_clip(run_dir, source.path_for(clip_id), sample_rate=rate)
-        reference_clips[clip_id] = {
-            "video_logit": scored["video_logit"],
-            "audio_logit": scored["audio_logit"],
-            "video_probability": scored["video_probability"],
-            "audio_probability": scored["audio_probability"],
-            "fused_probability": scored["fused_probability"],
-            "video_flags": bool(scored["video_flags"]),
-            "audio_flags": bool(scored["audio_flags"]),
-            "decision": scored["decision"],
-        }
+        clip = MediaClip(
+            name=clip_id,
+            frames=frames,
+            audio=audio.astype(np.float32) / 32767.0,
+            sample_rate=rate,
+        )
+        media.append(clip)
+        steps_by_clip[clip_id] = {stream: clip_steps(stream, clip)[None] for stream in STREAMS}
+
+    scorer = RunScorer.from_run(run_dir)
+    reference_clips = dict(zip(picks, scorer.describe(scorer.logits(media)), strict=True))
 
     fbank = mel_transform(rate).mel_scale.fb.numpy().astype("<f4")
     (out / "mel_fbank.bin").write_bytes(np.ascontiguousarray(fbank).tobytes())
     first = picks[0]
-    with np.load(source.path_for(first)) as data:
-        check_wave = data["audio"].astype(np.float32) / 32767.0
-    check_mel = log_mel(check_wave, rate).astype("<f4")
+    check_mel = log_mel(media[0].audio, rate).astype("<f4")
     (out / "logmel_check.bin").write_bytes(np.ascontiguousarray(check_mel).tobytes())
 
     def rows(ids: Sequence[str], scores: dict[str, np.ndarray]) -> dict:
@@ -375,34 +326,27 @@ def main() -> None:
     (out / "test_scores.json").write_text(json.dumps(test_payload) + "\n")
 
     print("[4/5] exporting both streams to ONNX")
-    graphs: dict[str, InferenceGraph] = {}
     shapes: dict[str, list[int]] = {}
     for stream in STREAMS:
-        model, normalizer, _ = load_checkpoint(run_dir / f"{stream}.pt")
-        graph = InferenceGraph(model, normalizer.mean, normalizer.std).eval()
-        shape = tuple(steps_by_clip[first][stream].shape)
-        shapes[stream] = list(shape)
-        with torch.no_grad():
-            for clip_id in picks:
-                got = float(graph(torch.from_numpy(steps_by_clip[clip_id][stream]))[0])
-                want = reference_clips[clip_id][f"{stream}_logit"]
-                check_close(f"{clip_id} {stream} graph", got, want, 1e-5)
-        export_graph(graph, shape, out / "models" / f"{stream}.onnx")
-        graphs[stream] = graph
+        model, normalizer = scorer.models[stream]
+        shapes[stream] = list(steps_by_clip[first][stream].shape)
+        export_stream(
+            model, normalizer, steps_by_clip[first][stream][0], out / "models" / f"{stream}.onnx"
+        )
 
     try:
-        import onnxruntime as ort
+        import onnxruntime  # noqa: F401
     except ImportError:
         print("  onnxruntime not importable, skipping the ONNX parity pass")
     else:
         worst = 0.0
         for stream in STREAMS:
-            session = ort.InferenceSession(str(out / "models" / f"{stream}.onnx"))
-            for clip_id in picks:
-                got = float(session.run(None, {"steps": steps_by_clip[clip_id][stream]})[0][0])
+            steps = [steps_by_clip[clip_id][stream][0] for clip_id in picks]
+            got = onnx_logits(out / "models" / f"{stream}.onnx", steps)
+            for clip_id, value in zip(picks, got, strict=True):
                 want = reference_clips[clip_id][f"{stream}_logit"]
-                check_close(f"{clip_id} {stream} onnx", got, want, 1e-4)
-                worst = max(worst, abs(got - want))
+                check_close(f"{clip_id} {stream} onnx", float(value), want, PARITY_TOLERANCE)
+                worst = max(worst, abs(float(value) - want))
         print(f"  onnxruntime matches PyTorch on {len(picks)} clips, worst logit gap {worst:.2e}")
 
     print("[5/5] writing manifest and reference")
@@ -424,6 +368,7 @@ def main() -> None:
         )
     manifest = {
         "trained_from_commit": commit,
+        "trained_from_describe": describe_commit(commit),
         "seed": results["seed"],
         "profile": results["profile"],
         "target_precision": target,
@@ -456,7 +401,13 @@ def main() -> None:
             "differences of the audio, modulo 65536"
         ),
         "models": {
-            s: {"path": f"models/{s}.onnx", "input": "steps", "output": "logit", "shape": shapes[s]}
+            s: {
+                "path": f"models/{s}.onnx",
+                "input": "steps",
+                "output": "logit",
+                "shape": shapes[s],
+                "dynamic_axes": ["batch", "steps"],
+            }
             for s in STREAMS
         },
         "calibration": calibration,
@@ -474,6 +425,7 @@ def main() -> None:
                 "metrics",
                 "rules",
                 "family_rates",
+                "attribution",
                 "headline",
                 "splits",
                 "combo_counts",

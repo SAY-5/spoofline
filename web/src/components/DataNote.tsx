@@ -18,6 +18,10 @@ export function DataNote({ data }: { data: DemoData }) {
           Every number on this page describes that synthetic corpus. It is one seed and one held out pair of families, with no
           variance estimate, so gaps of a point or two between detectors should not be read as real.
         </p>
+        <p>
+          The headline figures, the catch strips and every table are the measured results of that offline run, replayed here from
+          the exported logits. The clip lab is the part that scores clips in this tab.
+        </p>
       </div>
       <div>
         <h3>What runs in this tab</h3>
@@ -25,12 +29,12 @@ export function DataNote({ data }: { data: DemoData }) {
           The {manifest.clips.length} clips here come from the test identities, which neither network trained on and which were not
           used for calibration. For each clip the page unpacks the exact uint8 frames and int16 samples, computes the video steps and the
           log mel patches in TypeScript, and runs both trained networks as ONNX graphs under onnxruntime-web on WebAssembly. Platt
-          scaling, the thresholds and the fusion rule are applied in TypeScript with the exported parameters. Nothing is sent to a
-          server.
+          scaling, the two stream thresholds, the weighted sum, the logistic fusion and the attribution of a decision to a stream are
+          applied in TypeScript with the exported parameters. Nothing is sent to a server.
         </p>
         <p>
           A node self-check scores every exported clip the same way and holds the raw logits to within 1e-4 of PyTorch, with identical
-          per stream and fused decisions.
+          per stream flags, identical weighted and logistic decisions, and the same triggering stream.
         </p>
       </div>
     </div>

@@ -56,8 +56,7 @@ export function signed(value: number, digits = 3): string {
 }
 
 export function gap(value: number): string {
-  if (value === 0) return "0";
-  return value.toExponential(1).replace("e-", "e-").replace("e+", "e+");
+  return value === 0 ? "0" : value.toExponential(1);
 }
 
 export function ms(value: number): string {

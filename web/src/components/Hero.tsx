@@ -58,6 +58,7 @@ export function Hero({ data }: { data: DemoData | null }) {
   }, [data]);
 
   const m = view?.metrics;
+  const manifest = data?.manifest;
   const target = view?.target ?? 0.95;
   const seenP = m?.seen_test.fused.precision;
   const unseenP = m?.unseen_test.fused.precision;
@@ -65,10 +66,13 @@ export function Hero({ data }: { data: DemoData | null }) {
 
   return (
     <section className="hero" aria-labelledby="hero-title">
-      <p className="eyebrow">Two stream audio and video spoof detection, running in this tab</p>
+      <p className="eyebrow">Two stream audio and video spoof detection</p>
       <h1 id="hero-title">
-        <span className="h1-line">Fused precision</span>
-        <span className="h1-figures">
+        <span className="sr-only">Fused precision on seen and unseen attack families</span>
+        <span className="h1-line" aria-hidden="true">
+          Fused precision
+        </span>
+        <span className="h1-figures" aria-hidden="true">
           <span className="fig">
             <span className="fig-num">{seenP !== undefined ? fixed(seenP) : "0.000"}</span>
             <span className="fig-cap">seen attack families</span>
@@ -79,6 +83,18 @@ export function Hero({ data }: { data: DemoData | null }) {
           </span>
         </span>
       </h1>
+      {seenP !== undefined && unseenP !== undefined && (
+        <p className="sr-only">
+          Fused precision {fixed(seenP)} on seen attack families and {fixed(unseenP)} on families it never trained on.
+        </p>
+      )}
+      {manifest && (
+        <p className="hero-provenance">
+          Measured offline on the synthetic {manifest.corpus.n_clips} clip corpus, seed {manifest.seed}, one held out
+          pair ({manifest.unseen_families.join(" and ")}), weights from commit{" "}
+          {manifest.trained_from_commit.slice(0, 7)}. Single run, no variance estimate.
+        </p>
+      )}
       <div className="gauge" aria-hidden={m ? undefined : true}>
         <div className="gauge-track">
           <span className="gauge-target" style={{ left: `${scale(target)}%` }}>
@@ -113,7 +129,11 @@ export function Hero({ data }: { data: DemoData | null }) {
           <div className="strips">
             <CatchStrip label="Video alone" flags={view.video} accent={false} />
             <CatchStrip label="Fused" flags={view.fused} accent />
-            <p className="strips-note">Each cell is one attacked clip from the unseen family test split.</p>
+            <p className="strips-note">
+              Each cell is one of the {view.fused.length} attacked clips in the unseen family test split. The cells
+              replay the exported PyTorch logits through the same Platt maps and thresholds; they are not scored in
+              this tab. The clip lab below is what runs here.
+            </p>
           </div>
         )}
       </div>

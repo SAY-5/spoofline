@@ -48,8 +48,10 @@ system has to decide.
 
 ## The two networks
 
-Both streams use the same shape, the CNN-LSTM arrangement from the published
-anti-spoofing line of work:
+Both streams use the same shape: a per step CNN encoder feeding a recurrent layer
+over time, the arrangement Xu, Li and Deng use for face anti-spoofing in *Learning
+Temporal Features Using LSTM-CNN Architecture for Face Anti-spoofing* (ACPR 2015,
+doi 10.1109/ACPR.2015.7486482).
 
 1. **Step encoder.** Four strided 3x3 convolutions (24, 40, 64, 64 channels), each
    with batch norm and ReLU, then global average pooling and a linear projection
@@ -77,11 +79,11 @@ Log mel spectrogram, 64 mel bands, 512 point FFT, hop 160 at 16 kHz. The
 spectrogram is cut into non overlapping 20 frame patches (200 ms each), so a two
 second clip becomes a sequence of 10 steps. Same normaliser treatment.
 
-## The leave-one-attack-family-out protocol
+## The leave one family per stream out protocol
 
 Eight attack families exist, four per modality. A run nominates one or more as
-**unseen**; the default is `video_splice` and `audio_vocoder`, one per stream, so
-both networks meet a new attack at test time.
+**unseen**; the default holds out one family per stream, `video_splice` and
+`audio_vocoder`, so both networks meet a new attack at test time.
 
 Identities are shuffled and partitioned into three pools that never mix: train,
 calib and test. Clips are then assigned:
@@ -95,6 +97,8 @@ calib and test. Clips are then assigned:
 
 Any train or calib clip that carries an unseen family is dropped from the corpus
 view entirely rather than being relabelled, so the held out families never leak.
+`Splits.counts()` reports those clips as `dropped`, so the four split sizes plus
+the dropped count always add up to the corpus.
 The two test splits share no clips: the test bona fide clips are dealt
 alternately between them, so precision is measurable on both without double
 counting a negative.
@@ -224,6 +228,21 @@ fusions once, extracts features, runs batched forward passes, and returns per cl
 probabilities, flags, both decisions and the attribution. `spoofline score`,
 `spoofline robustness` and `spoofline bench` all go through it, so a clip scored by
 the CLI and a clip scored inside the robustness suite follow the same path.
+
+## Browser demo
+
+`web/` serves the same detectors as a static page. `web/scripts/export.py` takes a
+finished run and writes both streams as ONNX through `spoofline.export`, the
+calibration and fusion parameters, the calibration and test split logits, the mel
+filterbank, and a small set of test split clips packed losslessly. The page
+recomputes the feature front end in TypeScript (`web/src/lib/features.ts` mirrors
+`spoofline/data/features.py`), runs the two graphs under onnxruntime-web on
+WebAssembly, and applies the exported Platt maps, thresholds and both fusion rules
+in TypeScript. Nothing is reimplemented on the Python side for the page: the export
+script scores its reference through `RunScorer` and exports through
+`ExportableDetector`. `npm run selfcheck` scores every exported clip under
+onnxruntime-node and holds each raw logit to within 1e-4 of the PyTorch reference,
+so the page and the package are checked against each other whenever either changes.
 
 ## Determinism
 

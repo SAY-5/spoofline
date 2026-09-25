@@ -14,12 +14,33 @@ jobs:
         with:
           enable-cache: true
       - name: Install the project
-        run: uv sync
+        run: uv sync --locked
       - name: Lint
         run: |
-          uv run ruff check spoofline tests
-          uv run ruff format --check spoofline tests
+          uv run ruff check spoofline tests web/scripts
+          uv run ruff format --check spoofline tests web/scripts
       - name: Tests on the tiny fixture corpus
         run: uv run pytest
       - name: Smoke run of the whole pipeline
         run: uv run spoofline pipeline --profile tiny
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install the page dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Parity of the exported run against PyTorch
+        run: npm run selfcheck | tee "$GITHUB_STEP_SUMMARY"
+      - name: Production bundle
+        run: npm run build

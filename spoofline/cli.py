@@ -246,6 +246,14 @@ def pipeline(
     show_default=True,
     help="Training processes run in parallel.",
 )
+@click.option(
+    "--pairs",
+    "pair_choice",
+    type=click.Choice(["all", "default"]),
+    default="all",
+    show_default=True,
+    help="Held out pairs to run: all 16, or only the profile's default pair.",
+)
 @click.option("--corpus-root", type=click.Path(), default=None)
 @click.option("--out-dir", type=click.Path(), default=None)
 def sweep_command(
@@ -253,14 +261,16 @@ def sweep_command(
     seed: int | None,
     n_seeds: int,
     workers: int,
+    pair_choice: str,
     corpus_root: str | None,
     out_dir: str | None,
 ) -> None:
-    """Repeat the evaluation over seeds and all 16 leave two families out splits."""
+    """Repeat the evaluation over seeds and the leave two families out splits."""
     config = _config(profile, seed, None, None)
     corpus = Path(corpus_root) if corpus_root else REPO_ROOT / "data" / "sweep" / config.profile
     out = Path(out_dir) if out_dir else REPO_ROOT / "runs" / "sweep" / config.profile
-    result = run_sweep(config, n_seeds, workers, corpus, out, progress=click.echo)
+    pairs = None if pair_choice == "all" else (tuple(config.unseen_families),)
+    result = run_sweep(config, n_seeds, workers, corpus, out, progress=click.echo, pairs=pairs)
     click.echo("")
     click.echo(result.summary)
     click.echo(f"artifacts in {result.out_dir}")

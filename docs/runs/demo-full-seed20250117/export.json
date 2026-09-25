@@ -1,0 +1,16 @@
+{
+  "clips": 32,
+  "files": {
+    "audio": "audio.onnx",
+    "video": "video.onnx"
+  },
+  "parity": {
+    "audio": {
+      "max_abs_diff": 3.814697265625e-06
+    },
+    "video": {
+      "max_abs_diff": 3.814697265625e-06
+    }
+  },
+  "tolerance": 0.0001
+}

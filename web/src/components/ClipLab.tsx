@@ -210,7 +210,7 @@ export function ClipLab({ data, detector, modelError }: { data: DemoData; detect
   return (
     <div className="lab">
       <fieldset className="picker">
-        <legend className="picker-legend">Pick a clip from the held out test identities</legend>
+        <legend className="picker-legend">Held out test identities</legend>
         {grouped.map((group) => (
           <div className="picker-group" key={group.combo}>
             <p className="picker-title">{group.title}</p>
@@ -331,6 +331,25 @@ export function ClipLab({ data, detector, modelError }: { data: DemoData; detect
               )}
             </p>
             <ProbabilityBar value={score?.fused.probability ?? 0} threshold={manifest.calibration.fused.operating.threshold} active={score !== null} />
+            <dl className="readout readout-fusion">
+              <div>
+                <dt>logistic fusion</dt>
+                <dd>
+                  {score
+                    ? `${fixed(score.logistic.probability, 4)} at ${fixed(score.logistic.threshold, 4)}, ${
+                        score.logistic.decision === "attack" ? "attack" : "bona fide"
+                      }`
+                    : "..."}
+                </dd>
+              </div>
+              <div>
+                <dt>triggered by</dt>
+                <dd>
+                  {score ? score.triggeredBy : "..."}
+                  {score && ref ? ` (PyTorch: ${ref.triggered_by})` : ""}
+                </dd>
+              </div>
+            </dl>
             <footer className="stage-foot">
               <span className={`verdict verdict-big ${score?.fused.decision === "attack" ? "is-attack" : ""}`}>
                 {score ? (score.fused.decision === "attack" ? "Attack" : "Bona fide") : busy ? "Scoring" : "Waiting"}

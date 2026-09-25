@@ -82,6 +82,15 @@ export function ChartFrame({ frame, label, children, className }: { frame: Frame
   );
 }
 
+/**
+ * Baseline for a label drawn 6px above a horizontal reference line. The baseline is held
+ * at least `clearance` px above the bottom axis, where points with probability near zero
+ * gather, so a line close to the axis does not put its label over that cluster.
+ */
+export function lineLabelY(frame: Frame, lineY: number, clearance = 14): number {
+  return Math.min(lineY, frame.height - frame.bottom - clearance) - 6;
+}
+
 /** Spread label positions so that no two sit closer than `gap` pixels. */
 export function spread(positions: number[], gap: number): number[] {
   const order = positions.map((p, i) => [p, i] as const).sort((a, b) => a[0] - b[0]);

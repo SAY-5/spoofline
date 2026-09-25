@@ -28,7 +28,12 @@ def rng(seed: int, label: str) -> np.random.Generator:
 
 
 def seed_everything(seed: int, threads: int | None = None) -> None:
-    """Seed python, numpy and torch, and pin CPU threading for reproducibility."""
+    """Seed python, numpy and torch, and pin CPU threading for reproducibility.
+
+    ``PYTHONHASHSEED`` is set for processes started after this call, such as the
+    sweep's spawned workers. It cannot change string hashing in the interpreter
+    that is already running, so it is informational for the current process.
+    """
     os.environ.setdefault("PYTHONHASHSEED", str(seed))
     random.seed(seed)
     np.random.seed(seed % (2**32 - 1))

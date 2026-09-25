@@ -79,9 +79,9 @@ def _labels(corpus: LoadedCorpus, clip_ids) -> np.ndarray:
 
 def modality_labels(corpus: LoadedCorpus, clip_ids, stream: str) -> np.ndarray:
     """1 where this stream's own modality was attacked."""
-    attribute = "video_attacked" if stream == "video" else "audio_attacked"
+    field_name = "video_attacked" if stream == "video" else "audio_attacked"
     return np.array(
-        [int(getattr(corpus.record(cid), attribute)) for cid in clip_ids], dtype=np.int64
+        [int(getattr(corpus.record(cid), field_name)) for cid in clip_ids], dtype=np.int64
     )
 
 

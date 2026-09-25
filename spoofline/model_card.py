@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from .report import POOL_ORDER, SPLIT_ORDER, ordered_keys
+
 DETECTORS = ("video", "audio", "fused", "logistic")
 METRIC_COLUMNS = ("precision", "recall", "f1", "eer", "auc")
 REQUIRED_SECTIONS = (
@@ -147,11 +149,17 @@ def render_model_card(results: dict, robustness: dict | None = None) -> str:
         "",
         "| split | clips |",
         "| --- | --- |",
-        *[f"| {name} | {count} |" for name, count in splits["counts"].items()],
+        *[
+            f"| {name} | {splits['counts'][name]} |"
+            for name in ordered_keys(splits["counts"], SPLIT_ORDER)
+        ],
         "",
         "| identity pool | identities |",
         "| --- | --- |",
-        *[f"| {name} | {count} |" for name, count in splits["identity_pools"].items()],
+        *[
+            f"| {name} | {splits['identity_pools'][name]} |"
+            for name in ordered_keys(splits["identity_pools"], POOL_ORDER)
+        ],
         "",
         "## Thresholds",
         "",

@@ -24,6 +24,18 @@ dev = [
     "ruff>=0.6",
 ]
 
+# The pipeline is CPU only. On Linux the default PyPI wheel drags in the CUDA
+# toolkit, so torch and torchaudio come from the CPU index there instead. macOS
+# wheels are CPU only already and keep resolving from PyPI.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+torchaudio = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

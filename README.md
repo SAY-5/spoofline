@@ -43,8 +43,9 @@ reshapes clips into exactly the tensors the two streams consume. See
   | `audio_conversion` | pitch and formant shift by rational resampling with a phase vocoder stretch back to length |
   | `audio_splice` | segments from a second speaker concatenated with hard joins and level mismatch |
 
-* A leave-one-attack-family-out protocol with identity-disjoint train, calibration
-  and test pools.
+* A leave one family per stream out protocol with identity-disjoint train,
+  calibration and test pools: the default holds out one video family and one audio
+  family, so both networks meet a new attack at test time.
 * Per-stream Platt calibration, threshold selection at a target precision, and a
   fused operating point chosen the same way, plus AND and OR rules for reference.
 * Precision, recall, F1, EER, AUC and a per-family breakdown, on the seen-family
@@ -56,7 +57,7 @@ and fusion maths and the split table.
 ## Quick start
 
 ```bash
-make setup      # uv sync, Python 3.12, CPU PyTorch
+make setup      # uv sync, Python 3.12, CPU PyTorch wheels
 make lint       # ruff check and ruff format --check
 make test       # pytest on the committed tiny fixture corpus
 make demo       # the whole pipeline on the full corpus, prints the summary below
@@ -78,17 +79,22 @@ uv run spoofline score data/full/clips/clip_00000.npz
 
 `web/` is a static page that runs both trained detectors in the browser: clip features are computed in
 TypeScript, the two CNN-LSTMs run as ONNX graphs under onnxruntime-web, and the exported Platt maps,
-thresholds and fusion rule decide each clip. `web/scripts/export.py` writes the models and a small set of
-test clips from a `make demo` run, and `npm run selfcheck` holds every logit to within 1e-4 of PyTorch.
-`web/README.md` names the commit the weights were trained from and how to rebuild the page.
+thresholds, both fusion rules and the per clip attribution decide each clip. `web/scripts/export.py` writes
+the graphs and 25 test clips from a `make demo` run through the same `RunScorer` and `export_stream` the CLI
+uses. `npm run selfcheck` then re-scores every exported clip under onnxruntime-node: 370 assertions, worst
+raw logit gap 3.53e-5 against PyTorch and worst log mel gap 1.50e-4 against torchaudio.
+
+The page's headline figures and catch strips are that offline run replayed from its exported logits; the clip
+lab is the part that executes in the visitor's tab. `web/README.md` names the commit the weights were trained
+from and how to rebuild the page.
 
 ## Releases
 
 | version | feature |
 | --- | --- |
 | [v1.0.0](https://github.com/SAY-5/spoofline/releases/tag/v1.0.0) | baseline: two CNN-LSTM streams, per-stream Platt calibration at a target precision, weighted fusion, leave-one-family-out evaluation |
-| [v2.0.0](https://github.com/SAY-5/spoofline/releases/tag/v2.0.0) | evaluation you can trust: `spoofline sweep` over 3 seeds and all 16 leave-two-families-out splits, mean, std and bootstrap 95% intervals per detector |
-| [v3.0.0](https://github.com/SAY-5/spoofline/releases/tag/v3.0.0) | fusion that earns its place: logistic fusion over both streams plus their disagreement, compared with weighted sum, AND and OR, and per clip attribution of the triggering stream |
+| [v2.0.0](https://github.com/SAY-5/spoofline/releases/tag/v2.0.0) | seed and held out pair sweep with bootstrap intervals: `spoofline sweep` over 3 seeds and all 16 leave-two-families-out splits, mean, std and bootstrap 95% intervals per detector |
+| [v3.0.0](https://github.com/SAY-5/spoofline/releases/tag/v3.0.0) | logistic fusion and per clip attribution: logistic fusion over both streams plus their disagreement, compared with weighted sum, AND and OR, and the triggering stream named per clip |
 | [v4.0.0](https://github.com/SAY-5/spoofline/releases/tag/v4.0.0) | robustness to benign degradation: false alarm rate per perturbation and severity for every detector, and an abstain option with coverage against precision |
 | [v5.0.0](https://github.com/SAY-5/spoofline/releases/tag/v5.0.0) | deployment path: `spoofline export --onnx` with a 1e-4 parity check, a model card from the last run, batch `spoofline score --json`, and per clip p50 and p95 CPU latency |
 
@@ -96,21 +102,26 @@ test clips from a `make demo` run, and `npm run selfcheck` holds every logit to 
 
 ## Measured demo run
 
-Output of one `make demo` on a 10 core Apple silicon CPU, pasted verbatim:
+Output of one `make demo` on a 10 core Apple silicon CPU (torch 2.14.0, profile
+`full`, seed 20250117, `video_splice` and `audio_vocoder` held out). Every number
+below is verbatim from that run; only the corpus paths are shortened to
+repo-relative. The run's `results.json` is committed as
+[`docs/runs/demo-full-seed20250117/results.json`](docs/runs/demo-full-seed20250117/results.json),
+and `tests/test_readme_numbers.py` fails if this block and that file disagree.
 
 ```
 $ make demo
 [1/6] generating corpus 'full' into data/full
-  generated 160/1600 clips (8.5s)
-  generated 320/1600 clips (20.5s)
-  generated 480/1600 clips (31.6s)
-  generated 640/1600 clips (39.4s)
-  generated 800/1600 clips (46.4s)
-  generated 960/1600 clips (56.0s)
-  generated 1120/1600 clips (64.1s)
-  generated 1280/1600 clips (71.0s)
-  generated 1440/1600 clips (78.0s)
-  generated 1600/1600 clips (84.4s)
+  generated 160/1600 clips (6.1s)
+  generated 320/1600 clips (11.8s)
+  generated 480/1600 clips (17.7s)
+  generated 640/1600 clips (25.8s)
+  generated 800/1600 clips (33.3s)
+  generated 960/1600 clips (38.4s)
+  generated 1120/1600 clips (44.0s)
+  generated 1280/1600 clips (49.2s)
+  generated 1440/1600 clips (54.8s)
+  generated 1600/1600 clips (60.5s)
   wrote manifest for 1600 clips to data/full/manifest.json
 [2/6] loading 1600 clips into memory
   loaded 320/1600 clips
@@ -118,7 +129,7 @@ $ make demo
   loaded 960/1600 clips
   loaded 1280/1600 clips
   loaded 1600/1600 clips
-  splits {'train': 751, 'calib': 234, 'seen_test': 197, 'unseen_test': 123}
+  splits {'train': 751, 'calib': 234, 'seen_test': 197, 'unseen_test': 123, 'dropped': 295}
 [3/6] training the video stream
   video: 639 train clips, 112 val clips, 278 attacked, 10 epochs
     epoch 1/10 train_loss 0.5827 acc 0.740 | val_loss 0.4322 acc 0.795
@@ -155,7 +166,7 @@ combinations      audio_only 400 | bonafide 400 | both 400 | video_only 400
 video families    bonafide 800 | video_print 200 | video_recompress 200 | video_replay 200 | video_splice 200
 audio families    audio_conversion 200 | audio_replay 200 | audio_splice 200 | audio_vocoder 200 | bonafide 800
 unseen families   video_splice, audio_vocoder
-splits            train 751 | calib 234 | seen_test 197 | unseen_test 123
+splits            train 751 | calib 234 | seen_test 197 | unseen_test 123 | dropped 295
 identity pools    train 48 | calib 16 | test 16
 
 training
@@ -239,13 +250,13 @@ headline, unseen attack families
               logistic F1 0.797 and AUC 0.883 against video F1 0.644 and AUC 0.705
 
 wall clock
-  generate            84.5s
-  load                 4.5s
-  train_video        331.0s
-  train_audio        107.6s
-  calibrate           49.8s
+  generate            60.6s
+  load                 9.5s
+  train_video        502.4s
+  train_audio        107.7s
+  calibrate           47.5s
   evaluate             0.0s
-  total              577.4s
+  total              727.7s
 ==============================================================================
 ```
 
@@ -382,6 +393,122 @@ split, seen or unseen, was looked at while choosing it. Its streams are weaker
 than the full profile's, so compare its numbers with each other rather than with
 the demo run. This sweep took 1125 s on the same 10 core machine while another CPU
 heavy job was running on it.
+
+**This is the one block in this README with no committed artifact.** It predates
+`docs/runs/` and has not been re-run on this branch, so unlike the demo block, the
+robustness tables, the latency table and the full profile sweep below,
+`tests/test_readme_numbers.py` cannot gate it. Re-running
+`uv run spoofline sweep` writes `runs/sweep/reduced/sweep.json`, which is what a
+reader would have to compare it against.
+
+## Variance at the full profile, one held out pair
+
+The sweep above trades profile size for coverage. The other direction is the full
+demo profile over three seeds of the single held out pair the demo quotes, which is
+what `--pairs default` runs. Each run generates the corpus for its own seed and
+trains both streams at full size; the three runs took 1323 s of wall clock on the
+same 10 core CPU, with other work on the machine for part of that time. The cache
+keys are the ones the 16 pair sweep uses, so a later full sweep reuses these runs.
+
+```bash
+uv run spoofline sweep --profile full --pairs default --seeds 3 --workers 1
+```
+
+```
+$ uv run spoofline sweep --profile full --pairs default --seeds 3 --workers 1
+==============================================================================
+spoofline sweep   profile=full   seeds=3   held out pairs=1   runs=3
+==============================================================================
+corpus            1600 clips, 80 identities, 16 frames of 64x64, 2.0 s at 16000 Hz
+training          video 10 epochs, audio 8 epochs, batch 32, 8 threads per run
+seeds             20250117, 20250118, 20250119
+target precision  0.95 on the calib split of every run
+
+mean, sample std and bootstrap 95% interval of the mean over runs
+  split       detector  metric        mean    std   ci low  ci high
+  seen_test   video     precision    0.997  0.006    0.990    1.000
+  seen_test   video     recall       0.635  0.037    0.595    0.667
+  seen_test   video     f1           0.775  0.027    0.746    0.800
+  seen_test   video     eer          0.283  0.033    0.256    0.320
+  seen_test   video     auc          0.810  0.034    0.783    0.848
+  seen_test   audio     precision    0.980  0.011    0.969    0.990
+  seen_test   audio     recall       0.619  0.015    0.604    0.634
+  seen_test   audio     f1           0.759  0.013    0.744    0.770
+  seen_test   audio     eer          0.276  0.015    0.262    0.292
+  seen_test   audio     auc          0.801  0.018    0.785    0.820
+  seen_test   fused     precision    0.977  0.019    0.956    0.994
+  seen_test   fused     recall       0.986  0.013    0.970    0.994
+  seen_test   fused     f1           0.981  0.006    0.975    0.987
+  seen_test   fused     eer          0.067  0.063    0.023    0.140
+  seen_test   fused     auc          0.979  0.028    0.947    0.998
+  seen_test   logistic  precision    0.981  0.017    0.963    0.994
+  seen_test   logistic  recall       0.996  0.004    0.993    1.000
+  seen_test   logistic  f1           0.988  0.007    0.981    0.994
+  seen_test   logistic  eer          0.018  0.011    0.006    0.026
+  seen_test   logistic  auc          0.999  0.001    0.998    1.000
+  unseen_test video     precision    1.000  0.000    1.000    1.000
+  unseen_test video     recall       0.433  0.051    0.376    0.475
+  unseen_test video     f1           0.603  0.050    0.547    0.644
+  unseen_test video     eer          0.367  0.036    0.326    0.388
+  unseen_test video     auc          0.701  0.032    0.667    0.731
+  unseen_test audio     precision    0.944  0.071    0.864    1.000
+  unseen_test audio     recall       0.344  0.122    0.237    0.477
+  unseen_test audio     f1           0.498  0.134    0.373    0.639
+  unseen_test audio     eer          0.248  0.030    0.220    0.279
+  unseen_test audio     auc          0.831  0.022    0.806    0.846
+  unseen_test fused     precision    0.972  0.030    0.941    1.000
+  unseen_test fused     recall       0.622  0.019    0.600    0.635
+  unseen_test fused     f1           0.759  0.023    0.733    0.777
+  unseen_test fused     eer          0.179  0.012    0.165    0.188
+  unseen_test fused     auc          0.894  0.023    0.869    0.914
+  unseen_test logistic  precision    0.976  0.026    0.948    1.000
+  unseen_test logistic  recall       0.664  0.045    0.612    0.692
+  unseen_test logistic  f1           0.789  0.027    0.759    0.811
+  unseen_test logistic  eer          0.148  0.021    0.125    0.165
+  unseen_test logistic  auc          0.901  0.017    0.883    0.916
+
+decision rules at the single stream thresholds, mean over runs
+  split       rule      metric        mean    std   ci low  ci high
+  seen_test   and       precision    1.000  0.000    1.000    1.000
+  seen_test   and       recall       0.262  0.028    0.235    0.292
+  seen_test   and       f1           0.415  0.035    0.381    0.452
+  seen_test   or        precision    0.985  0.010    0.974    0.994
+  seen_test   or        recall       0.992  0.004    0.987    0.994
+  seen_test   or        f1           0.988  0.007    0.981    0.994
+  unseen_test and       precision    1.000  0.000    1.000    1.000
+  unseen_test and       recall       0.132  0.061    0.082    0.200
+  unseen_test and       f1           0.229  0.094    0.152    0.333
+  unseen_test or        precision    0.973  0.030    0.941    1.000
+  unseen_test or        recall       0.645  0.068    0.600    0.723
+  unseen_test or        f1           0.775  0.051    0.733    0.832
+
+derived, per run then summarised
+  unseen fused precision minus best stream         -0.028  0.030   -0.059    0.000
+  unseen logistic precision minus best stream      -0.024  0.026   -0.052    0.000
+  seen minus unseen fused precision                 0.004  0.021   -0.019    0.018
+  seen minus unseen logistic precision              0.006  0.016   -0.013    0.016
+
+unseen test precision and recall per held out pair, mean over seeds
+  video family      audio family       video P audio P fused P logis P fused R
+  video_splice      audio_vocoder        1.000   0.944   0.972   0.976   0.622
+
+wall clock        1323.0s
+==============================================================================
+```
+
+The demo block quotes fused unseen precision 0.941. Over three seeds of the same
+held out pair the mean is 0.972, the sample standard deviation is 0.030 and the
+bootstrap interval of the mean is 0.941 to 1.000, so the demo draw sits at the
+bottom of that interval rather than in the middle of it. Video alone reaches
+precision 1.000 on the unseen split in all three runs, with a standard deviation of
+0.000, so the fused score does not beat the best single stream on precision in any
+of them: the gap is -0.028 on average (interval -0.059 to 0.000) for the weighted
+sum and -0.024 (-0.052 to 0.000) for the logistic fusion. What fusion buys is still
+recall, 0.622 against 0.433 for video alone.
+
+The run is committed as
+[`docs/runs/sweep-full-default-pair/sweep.json`](docs/runs/sweep-full-default-pair/sweep.json),
+and `tests/test_readme_numbers.py` re-renders the block above from it.
 
 ```
 $ uv run spoofline sweep
@@ -612,8 +739,11 @@ stream keeps its clean score.
 
 ### False alarm rate on degraded bona fide clips
 
-Measured on the v3 demo run (full profile, seed 20250117) over its 86 bona fide
-test clips, 43 from each test split, so one clip moves a rate by 0.012. This is a
+Measured on the demo run above (full profile, seed 20250117) over its 86 bona fide
+test clips, 43 from each test split, so one clip moves a rate by 0.012. The run is
+committed as
+[`docs/runs/demo-full-seed20250117/robustness.json`](docs/runs/demo-full-seed20250117/robustness.json)
+and `tests/test_readme_numbers.py` compares every cell below against it. This is a
 single run; the table has no variance estimate.
 
 | perturbation | stream | severity | video | audio | weighted sum | logistic |
@@ -752,6 +882,10 @@ audio: runs/full/onnx/audio.onnx  max |onnx - torch| 3.81e-06 over 32 clips
 wrote runs/full/onnx/export.json
 ```
 
+Both figures are in
+[`docs/runs/demo-full-seed20250117/export.json`](docs/runs/demo-full-seed20250117/export.json);
+the paths above are shortened to repo-relative, as in the demo block.
+
 ### Model card
 
 `spoofline model-card` renders the data note, splits, every threshold with its
@@ -801,20 +935,22 @@ spoofline bench   clips=200   threads=1   CPU
 per clip wall time; a stream includes its feature extraction, end to end adds
 npz decode, calibration, both fusions and attribution
   engine  stage          p50 ms   p95 ms  mean ms     n
-  torch   video           10.07    15.03    11.91   200
-  torch   audio            2.54     7.20     3.96   200
-  torch   end_to_end      17.04    42.82    20.45   200
-  onnx    video            4.50     6.35     4.81   200
-  onnx    audio            2.05     3.16     2.20   200
-  onnx    end_to_end       8.44    17.35    10.44   200
+  torch   video            6.87     7.28     6.91   200
+  torch   audio            1.44     2.30     1.56   200
+  torch   end_to_end       9.38    12.66    10.13   200
+  onnx    video            3.02     3.24     3.05   200
+  onnx    audio            1.13     1.16     1.14   200
+  onnx    end_to_end       5.11     5.78     5.23   200
 ==============================================================================
 ```
 
-The machine was running another CPU heavy job throughout, at a load average near
-17 on 10 cores, so the p95 figures in particular are inflated; treat these as
-numbers from a busy laptop, not a quiet benchmark host. ONNX Runtime is about
-twice as fast as PyTorch here on both streams, and the end to end row adds the
-npz decode and the feature extraction that both engines share.
+These come from the same run as the block above, on the same 10 core CPU, and
+`docs/runs/demo-full-seed20250117/latency.json` is the file they were rendered
+from. The p95 of every row sits within a few milliseconds of its p50, so nothing
+else heavy was competing for the core during the measurement. Dividing the p50
+column, ONNX Runtime is about 2.3 times faster than PyTorch on the video stream,
+about 1.3 times on the audio stream and about 1.8 times end to end, where both
+engines share the npz decode and the feature extraction.
 
 ## Plugging in a real corpus
 
@@ -855,9 +991,11 @@ generated one. `tests/test_sources.py` exercises the adapter on a written out cl
   the whole demo fits in seven minutes of CPU. Real face forensics works at much
   higher resolution and a print or replay attack is far subtler there.
 * **The demo is one seed and one held out pair.** The demo block is a single run
-  with `video_splice` and `audio_vocoder` held out. The sweep adds variance over
-  3 seeds and all 16 held out pairs, but only on the reduced profile; no full
-  profile sweep has been run.
+  with `video_splice` and `audio_vocoder` held out. Variance comes from two sweeps:
+  3 seeds and all 16 held out pairs on the reduced profile, and 3 seeds of the
+  default pair on the full profile. Sixteen pairs times three seeds of full size
+  training still does not fit on a CPU, so no full profile numbers exist for the
+  other 15 pairs.
 * **The threshold is fitted on 234 clips.** Choosing the lowest threshold that
   reaches the target precision is the most optimistic choice available on a finite
   calibration set, so some of the seen to unseen drop is threshold sampling noise
@@ -912,4 +1050,8 @@ spoofline/
     cnn_lstm.py      the shared detector
 tests/               pytest suite on the committed tiny fixture corpus
 fixtures/tiny/       24 clip corpus, committed so tests never generate
+docs/runs/           the JSON artifacts of the runs this README quotes
+web/                 the browser demo: a Vite and React page, the feature,
+                     calibration and fusion code reimplemented in TypeScript, and
+                     scripts/export.py, which writes public/data from a finished run
 ```

@@ -15,7 +15,7 @@ import {
 import type { DemoData } from "../lib/data.ts";
 import type { AnyDetector, Detector, TestSplit } from "../lib/types.ts";
 import { fixed } from "../format.ts";
-import { Axis, ChartFrame, linear, logOdds, type Frame } from "./charts.tsx";
+import { Axis, ChartFrame, linear, lineLabelY, logOdds, type Frame } from "./charts.tsx";
 
 const TARGET_MIN = 0.8;
 const TARGET_MAX = 1;
@@ -76,7 +76,7 @@ function PlattChart({ stream, logits, labels, platt, threshold }: PlattChartProp
           ),
         )}
         <line className="threshold-line" x1={frame.left} x2={frame.width - frame.right} y1={y(threshold)} y2={y(threshold)} />
-        <text className="threshold-label" x={frame.left + 6} y={y(threshold) - 6}>
+        <text className="threshold-label" x={frame.left + 6} y={lineLabelY(frame, y(threshold))}>
           threshold {fixed(threshold, 4)}
         </text>
       </ChartFrame>

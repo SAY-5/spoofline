@@ -22,6 +22,7 @@ import {
   thresholdAtPrecision,
 } from "../src/lib/calibration.ts";
 import { clipShape, decodeClip } from "../src/lib/clip.ts";
+import { lineLabelY, linear, type Frame } from "../src/components/charts.tsx";
 import { logMel, melPatches, N_FREQS, N_MELS, videoSteps } from "../src/lib/features.ts";
 import { scoreClip } from "../src/lib/score.ts";
 import type { AnyDetector, Manifest, Reference, ScoreRows, Stream, TestScores, TestSplit } from "../src/lib/types.ts";
@@ -125,6 +126,22 @@ async function main(): Promise<void> {
   const fusion = fitFusion(calibPv, calibPa, calibLabels, manifest.target_precision);
   close("fusion weight reproduces from the grid search", fusion.weight, cal.fused.weight, 1e-12);
   close("fusion threshold reproduces from the grid search", fusion.operating.threshold, cal.fused.operating.threshold, 1e-12);
+
+  // The Platt threshold label keeps clear of the bona fide cluster along the bottom axis.
+  const frame: Frame = { width: 480, height: 300, left: 52, right: 16, top: 16, bottom: 44 };
+  const axisY = frame.height - frame.bottom;
+  const yOf = linear(0, 1, axisY, frame.top);
+  const audioLine = yOf(cal.audio.operating.threshold);
+  const videoLine = yOf(cal.video.operating.threshold);
+  check("audio threshold label sits 6px above a line far from the axis", lineLabelY(frame, audioLine) === audioLine - 6);
+  check("video threshold line lies within 14px of the axis", axisY - videoLine < 14, `${axisY - videoLine}`);
+  check("video threshold label is held 20px above the axis", lineLabelY(frame, videoLine) === axisY - 20);
+  let labelInFrame = true;
+  for (let p = 0; p <= 1; p += 0.001) {
+    const labelY = lineLabelY(frame, yOf(p));
+    if (labelY < frame.top - 6 || labelY > axisY - 20) labelInFrame = false;
+  }
+  check("threshold label baseline stays between the frame top and the axis clearance for every probability", labelInFrame);
 
   // Test split metrics table.
   const testPv = plattProbabilities(cal.video.calibrator, test.video_logit);

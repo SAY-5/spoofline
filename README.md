@@ -97,6 +97,7 @@ from and how to rebuild the page.
 | [v3.0.0](https://github.com/SAY-5/spoofline/releases/tag/v3.0.0) | logistic fusion and per clip attribution: logistic fusion over both streams plus their disagreement, compared with weighted sum, AND and OR, and the triggering stream named per clip |
 | [v4.0.0](https://github.com/SAY-5/spoofline/releases/tag/v4.0.0) | robustness to benign degradation: false alarm rate per perturbation and severity for every detector, and an abstain option with coverage against precision |
 | [v5.0.0](https://github.com/SAY-5/spoofline/releases/tag/v5.0.0) | deployment path: `spoofline export --onnx` with a 1e-4 parity check, a model card from the last run, batch `spoofline score --json`, and per clip p50 and p95 CPU latency |
+| [v5.1.0](https://github.com/SAY-5/spoofline/releases/tag/v5.1.0) | browser demo on the package's own code path: both fusions and the triggering stream on the page, `spoofline sweep --pairs default` for an error bar on the headline, and every README figure but one gated on a committed run |
 
 `CHANGELOG.md` has the detail for every version.
 

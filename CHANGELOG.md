@@ -3,10 +3,10 @@
 All notable changes to spoofline. Versions follow semantic versioning and each
 one is an annotated git tag with a matching GitHub release.
 
-## Unreleased
+## 5.1.0
 
-The browser demo as a first class deliverable, and every README figure gated on a
-committed artifact.
+The browser demo on the package's own code path, and README figures gated on
+committed runs.
 
 * `web/scripts/export.py` scores its reference through
   `spoofline.scoring.RunScorer` and exports both graphs through
@@ -19,12 +19,14 @@ committed artifact.
   out pair and the training commit, and says that the catch strips replay exported
   logits rather than scoring in the tab.
 * CI runs the page: `npm ci`, `npm run typecheck`, `npm run selfcheck` and the
-  production bundle, and `ruff` now lints `web/scripts` as well. The self-check grew
-  from 258 to 370 assertions over 25 clips, because both fusion probabilities, both
+  production bundle, and `ruff` now lints `web/scripts` as well. The self-check
+  makes 374 assertions over 25 clips, because both fusion probabilities, both
   decisions and the attribution now have to match PyTorch.
-* `docs/runs/` holds the JSON of the runs the README quotes, and
-  `tests/test_readme_numbers.py` re-renders every pasted block from it, so a stale
-  table fails the suite instead of drifting. The demo run was re-measured on this
+* `docs/runs/` holds the JSON of the demo run and of the full profile sweep, and
+  `tests/test_readme_numbers.py` re-renders every block and table the README
+  quotes from them, so a stale figure fails the suite instead of drifting. The
+  reduced profile variance table is the one block left without an artifact, and
+  the README says so above that table. The demo run was re-measured on this
   branch: every metric reproduced, and the latency table was re-measured on a
   quieter machine.
 * `spoofline sweep --pairs default` restricts the sweep to the profile's held out
@@ -40,9 +42,19 @@ committed artifact.
 * The report orders its rows itself instead of inheriting the key order of the
   dict it is handed, so a run rendered from `results.json` prints what the run
   printed.
+* The corpus cache compares the whole corpus shape instead of the seed and the
+  clip count alone, so a corpus rendered with other frame or audio settings is
+  refused rather than reused.
 * On Linux torch and torchaudio resolve from the PyTorch CPU index, so a CPU only
   test run no longer installs the CUDA toolkit, and CI installs with
   `uv sync --locked`.
+* Accessibility and prose: one live region for the calibration table instead of
+  one per cell, a plain text hero heading, the draggable target named in the chart
+  label, larger small type, and a citation for the CNN-LSTM arrangement in the
+  architecture note.
+* 4 new test modules: the README figures against the committed runs, the browser
+  demo's export path, reading a finished run's seed and splits back, and committed
+  artifacts carrying no machine paths. 172 tests at this commit.
 
 ## 5.0.0
 

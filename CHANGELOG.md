@@ -3,6 +3,27 @@
 All notable changes to spoofline. Versions follow semantic versioning and each
 one is an annotated git tag with a matching GitHub release.
 
+## 5.1.1
+
+A dependency refresh past published advisories; the package code is unchanged.
+
+* `uv.lock`: setuptools 84.0.0 to 84.1.0 (GHSA-xmj3-9gf7-h52w), which torch
+  pulls in; the advisory concerns legacy wheel installation on Windows. torch
+  and torchaudio stay at 2.14.0 and 2.11.0, from the PyTorch CPU index on Linux.
+* `web/package-lock.json`: Vite 7.3.6 to 7.3.7 (GHSA-587h-7wmj-h5pm,
+  GHSA-698v-4r3x-3vcv, GHSA-9jrq-w75r-8gcw, GHSA-r825-w8mm-5pxw,
+  GHSA-rq7h-c2jc-7f22), whose advisories concern the development server rather
+  than the built page, and source-map-js 1.2.1 to 1.2.2 (GHSA-68fv-2mgg-jv7q),
+  which only the bundler loads. The lockfile also drops playwright-core 1.63.0,
+  which `web/package.json` stopped listing in 5.1.0 while the lockfile kept it.
+* filelock stays at 3.32.6. Its three advisories (GHSA-567q-5qvw-pf92,
+  GHSA-9vhv-jxww-xfm5, GHSA-v4x8-3wr5-3wq8) are fixed only in 4.2.1, a new
+  major version, and every 3.x release up to the last, 3.32.7, is affected.
+  spoofline does not import filelock. torch does, and the torch 2.14.0 wheel
+  uses `FileLock`, `BaseFileLock` and `Timeout` but never `ReadWriteLock`, the
+  class GHSA-v4x8-3wr5-3wq8 (high) and GHSA-9vhv-jxww-xfm5 concern;
+  GHSA-567q-5qvw-pf92 needs Windows.
+
 ## 5.1.0
 
 The browser demo on the package's own code path, and README figures gated on

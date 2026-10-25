@@ -98,6 +98,7 @@ from and how to rebuild the page.
 | [v4.0.0](https://github.com/SAY-5/spoofline/releases/tag/v4.0.0) | robustness to benign degradation: false alarm rate per perturbation and severity for every detector, and an abstain option with coverage against precision |
 | [v5.0.0](https://github.com/SAY-5/spoofline/releases/tag/v5.0.0) | deployment path: `spoofline export --onnx` with a 1e-4 parity check, a model card from the last run, batch `spoofline score --json`, and per clip p50 and p95 CPU latency |
 | [v5.1.0](https://github.com/SAY-5/spoofline/releases/tag/v5.1.0) | browser demo on the package's own code path: both fusions and the triggering stream on the page, `spoofline sweep --pairs default` for an error bar on the headline, and every README figure but one gated on a committed run |
+| [v5.1.1](https://github.com/SAY-5/spoofline/releases/tag/v5.1.1) | dependency refresh: setuptools, Vite and source-map-js past published advisories, with filelock held at 3.32.6 because its fix is only in 4.x |
 
 `CHANGELOG.md` has the detail for every version.
 

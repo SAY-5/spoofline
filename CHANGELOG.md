@@ -3,6 +3,21 @@
 All notable changes to spoofline. Versions follow semantic versioning and each
 one is an annotated git tag with a matching GitHub release.
 
+## 5.1.2
+
+A dependency refresh for the one package the 5.1.1 scan still reported; the
+package code is unchanged.
+
+* `uv.lock`: filelock 3.32.6 to 4.2.1, which fixes GHSA-567q-5qvw-pf92,
+  GHSA-9vhv-jxww-xfm5 and GHSA-v4x8-3wr5-3wq8, the three advisories 5.1.1 held
+  back because their only fix is a new major version. torch 2.14.0 is the only
+  locked package that requires filelock, with no version bound, and as 5.1.1
+  recorded, the torch 2.14.0 wheel uses only `FileLock`, `BaseFileLock` and
+  `Timeout` from it. filelock's 4.0.0 break is in the `SoftReadWriteLock`
+  on-disk protocol, and 4.2.1 needs Python 3.11 or later, which the 3.12 pin
+  meets. No other locked package moved; torch and torchaudio stay at 2.14.0
+  and 2.11.0.
+
 ## 5.1.1
 
 A dependency refresh past published advisories; the package code is unchanged.
